@@ -1,9 +1,14 @@
 import SwiftUI
 import Foundation
 
+// MARK: - Notification Names
+extension Notification.Name {
+    static let showUserProfile = Notification.Name("showUserProfile")
+}
+
 // ========================================================================
 // MARK: - Models
-// ========================================================================
+// ==================================================x======================
 
 struct Recipe: Identifiable, Codable, Hashable {
     let id: String
@@ -436,6 +441,9 @@ struct HomeView: View {
         }
         .overlay(processingOverlay)
         .animation(.default, value: recipeStore.filteredRecipes)
+        .onReceive(NotificationCenter.default.publisher(for: .showUserProfile)) { _ in
+            showingScanKitchenPage = true
+        }
         // --- ACTION SHEET IMPLEMENTATION ---
         // This presents the user with the two choices.
         .actionSheet(isPresented: $showingImportOptions) {
@@ -575,6 +583,8 @@ struct RecipeDetailView: View {
                                 .padding(.top, 4)
                         }
                     }
+                    
+                    HealthReport(recipe: recipe)
                     
                     IngredientsView(recipe: recipe)
                     
