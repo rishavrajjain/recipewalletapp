@@ -406,14 +406,19 @@ struct HomeView: View {
                     Button {
                         showingImportOptions = true
                     } label: {
-                        Label("Import", systemImage: "video.badge.plus")
+                        Label {
+                            Text("Import")
+                        } icon: {
+                            Image(systemName: "line.3.horizontal")
+                                .rotationEffect(.degrees(90))
+                        }
                     }
                 }
                 // --- END MODIFICATION ---
             }
             // --- ALL SHEET MODIFIERS ---
             .sheet(isPresented: $showingImportSheet) { ImportReelSheet() }
-            .sheet(isPresented: $showingScanKitchenPage) { ScanKitchenView() } // For the new page
+            .sheet(isPresented: $showingScanKitchenPage) { UserInfoView() } // For the new page
             .sheet(isPresented: $showingCreateCollectionSheet) { NewCollectionSheet() }
             .sheet(item: $recipeToManage) { recipe in
                 AddToCollectionSheet(recipe: recipe)
@@ -434,10 +439,10 @@ struct HomeView: View {
         // --- ACTION SHEET IMPLEMENTATION ---
         // This presents the user with the two choices.
         .actionSheet(isPresented: $showingImportOptions) {
-            ActionSheet(title: Text("Add Recipe"),
-                        message: Text("Choose an import method."),
+            ActionSheet(title: Text("Options"),
+                        message: Text("Choose an option"),
                         buttons: [
-                            .default(Text("Scan Kitchen")) {
+                            .default(Text("User Profile")) {
                                 showingScanKitchenPage = true
                             },
                             .default(Text("Import Video")) {
