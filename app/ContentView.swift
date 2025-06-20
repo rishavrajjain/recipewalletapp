@@ -546,9 +546,6 @@ struct CollectionDetailView: View {
 struct RecipeDetailView: View {
     let recipe: Recipe
     
-    // The view model to manage the state of image generation for this specific recipe.
-    @StateObject private var imageGeneratorViewModel = StepImageViewModel()
-    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -588,47 +585,7 @@ struct RecipeDetailView: View {
                     
                     IngredientsView(recipe: recipe)
                     
-                    // --- This is the updated "Instructions" section ---
-                    VStack(alignment: .leading, spacing: 12) {
-                        // Title with Generate button
-                        HStack {
-                            Text("Instructions")
-                                .font(.title2)
-                                .fontWeight(.semibold)
-                            Spacer()
-                            
-                            // The "Wand" button to trigger image generation
-                            Button {
-                                imageGeneratorViewModel.generateImages(for: recipe.steps, recipeTitle: recipe.name)
-                            } label: {
-                                Image(systemName: "wand.and.stars")
-                                    .font(.title3)
-                                    .foregroundColor(.pink)
-                            }
-                            // Disable if already loading or has images to prevent re-tapping
-                            .disabled(imageGeneratorViewModel.isLoading || !imageGeneratorViewModel.generatedImages.isEmpty)
-                        }
-                        
-                        // Container for the loading view and the final image carousel
-                        StepImageCarouselContainer(viewModel: imageGeneratorViewModel)
-                        
-                        // The list of textual instructions
-                        VStack(alignment: .leading, spacing: 10) {
-                            ForEach(Array(recipe.steps.enumerated()), id: \.offset) { index, step in
-                                HStack(alignment: .top, spacing: 12) {
-                                    Text("\(index + 1).")
-                                        .bold()
-                                        .foregroundStyle(.orange)
-                                    Text(step)
-                                }
-                            }
-                        }
-                        .padding()
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.secondarySystemBackground))
-                        .cornerRadius(12)
-                    }
-                    // --- End of updated section ---
+                    InstructionsView(recipe: recipe)
                     
                 }
                 .padding()

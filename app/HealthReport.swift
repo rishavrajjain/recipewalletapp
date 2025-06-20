@@ -205,73 +205,52 @@ struct HealthReport: View {
     @State private var isLoading = false
     @State private var analysis: HealthAnalysis?
     @State private var showingDetail = false
-    @State private var cardScale: CGFloat = 1.0
     @State private var showingNoBloodTestAlert = false
     
     var body: some View {
         Button(action: analyzeHealth) {
             ZStack {
-                // Animated gradient background
-                RoundedRectangle(cornerRadius: 24)
-                    .fill(
-                        LinearGradient(
-                            gradient: Gradient(colors: [
-                                Color.purple.opacity(0.8),
-                                Color.pink.opacity(0.9),
-                                Color.red.opacity(0.7)
-                            ]),
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(height: 120)
-                    .scaleEffect(cardScale)
-                    .shadow(color: .purple.opacity(0.3), radius: 15, x: 0, y: 8)
+                // Pure black background - Apple style
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(Color.black)
+                    .frame(height: 88)
+                
+                // Subtle border
+                RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                    .frame(height: 88)
                 
                 HStack(spacing: 16) {
-                    // Icon with pulse animation
-                    ZStack {
-                        Circle()
-                            .fill(Color.white.opacity(0.2))
-                            .frame(width: 60, height: 60)
-                        
-                        Image(systemName: isLoading ? "brain.head.profile" : "heart.text.square.fill")
-                            .font(.system(size: 28, weight: .bold))
-                            .foregroundStyle(.white)
-                            .symbolEffect(.pulse, isActive: isLoading)
-                    }
+                    // Clean, minimal icon
+                    Image(systemName: isLoading ? "brain.head.profile" : "heart.text.square.fill")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .symbolEffect(.pulse, isActive: isLoading)
                     
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("AI Health Check")
-                                .font(.title3.bold())
-                                .foregroundStyle(.white)
-                            
-                            if !isLoading && analysis == nil {
-                                Image(systemName: "sparkles")
-                                    .font(.caption)
-                                    .foregroundStyle(.yellow)
-                                    .symbolEffect(.bounce, value: cardScale)
-                            }
-                        }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("AI Health Analysis")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundColor(.white)
                         
-                        Text(isLoading ? "Analyzing your health data..." : "Tap to see how this affects YOUR body")
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.9))
-                            .multilineTextAlignment(.leading)
+                        Text(isLoading ? "Analyzing..." : "Personalized health insights")
+                            .font(.system(size: 15))
+                            .foregroundColor(.white.opacity(0.6))
                     }
                     
                     Spacer()
                     
-                    // Loading or arrow
+                    // Clean arrow or loading
                     if isLoading {
                         ProgressView()
-                            .tint(.white)
-                            .scaleEffect(1.2)
+                            .tint(.white.opacity(0.6))
+                            .scaleEffect(0.9)
                     } else {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.title2)
-                            .foregroundStyle(.white.opacity(0.8))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white.opacity(0.4))
                     }
                 }
                 .padding(.horizontal, 20)
@@ -280,11 +259,6 @@ struct HealthReport: View {
         }
         .buttonStyle(.plain)
         .disabled(isLoading)
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
-                cardScale = 1.02
-            }
-        }
         .sheet(isPresented: $showingDetail) {
             if let analysis = analysis {
                 HealthAnalysisDetailView(analysis: analysis, recipe: recipe)
