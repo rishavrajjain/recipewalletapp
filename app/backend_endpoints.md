@@ -37,7 +37,8 @@ Request:
     "steps": ["string", "string"],
     "createdAt": "ISO-date-string"
   },
-  "blood_test_id": "uuid-string"
+  "blood_test_id": "uuid-string",
+  "include_blood_test": false
 }
 
 Response:

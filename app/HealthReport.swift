@@ -13,7 +13,7 @@ struct HealthAnalysis: Identifiable {
     let mainCulprits: [IngredientImpact]
     let healthBoosters: [IngredientImpact]
     let recommendations: HealthRecommendations
-    let bloodMarkersAffected: [BloodMarkerImpact]
+    let bloodMarkersAffected: [BloodMarkerImpact]?
     
     enum RiskLevel: String, CaseIterable {
         case low = "low"
@@ -50,10 +50,19 @@ struct IngredientImpact: Identifiable {
     let id = UUID()
     let ingredient: String
     let impact: String
-    let severity: HealthAnalysis.RiskLevel
+    let severity: String  // Changed to String to match backend
+    
+    // Convert string severity to RiskLevel for UI
+    var riskLevel: HealthAnalysis.RiskLevel {
+        switch severity.lowercased() {
+        case "high": return .high
+        case "medium": return .medium
+        default: return .low
+        }
+    }
     
     var emoji: String {
-        switch severity {
+        switch riskLevel {
         case .low: return "😊"
         case .medium: return "😐"
         case .high: return "😰"
@@ -82,11 +91,13 @@ struct BloodMarkerImpact: Identifiable {
 
 struct HealthAnalysisRequest: Codable {
     let recipe: Recipe
-    let bloodTestId: String
+    let bloodTestId: String?
+    let includeBloodTest: Bool
     
     enum CodingKeys: String, CodingKey {
         case recipe
         case bloodTestId = "blood_test_id"
+        case includeBloodTest = "include_blood_test"
     }
 }
 
@@ -106,11 +117,57 @@ extension HealthAnalysis: Codable {
         case recommendations
         case bloodMarkersAffected = "blood_markers_affected"
     }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        overallScore = try container.decode(Int.self, forKey: .overallScore)
+        riskLevel = try container.decode(RiskLevel.self, forKey: .riskLevel)
+        personalMessage = try container.decode(String.self, forKey: .personalMessage)
+        mainCulprits = try container.decode([IngredientImpact].self, forKey: .mainCulprits)
+        healthBoosters = try container.decode([IngredientImpact].self, forKey: .healthBoosters)
+        recommendations = try container.decode(HealthRecommendations.self, forKey: .recommendations)
+        
+        // Handle blood markers - can be either [String] or [BloodMarkerImpact] or nil
+        if container.contains(.bloodMarkersAffected) {
+            do {
+                // Try to decode as [BloodMarkerImpact] first (blood test mode)
+                bloodMarkersAffected = try container.decode([BloodMarkerImpact].self, forKey: .bloodMarkersAffected)
+            } catch {
+                do {
+                    // If that fails, try as [String] (general mode)
+                    let stringArray = try container.decode([String].self, forKey: .bloodMarkersAffected)
+                    // Convert strings to simple BloodMarkerImpact objects
+                    bloodMarkersAffected = stringArray.map { markerName in
+                        BloodMarkerImpact(
+                            marker: markerName.capitalized,
+                            currentLevel: 0,
+                            predictedImpact: "May be affected",
+                            targetRange: "See your doctor",
+                            isOutOfRange: false
+                        )
+                    }
+                } catch {
+                    // If both fail, set to nil
+                    bloodMarkersAffected = nil
+                }
+            }
+        } else {
+            bloodMarkersAffected = nil
+        }
+    }
 }
 
 extension HealthAnalysis.RiskLevel: Codable {}
 
-extension IngredientImpact: Codable {}
+extension IngredientImpact: Codable {
+    enum CodingKeys: String, CodingKey {
+        case ingredient
+        case impact
+        case severity
+    }
+}
+
 extension HealthRecommendations: Codable {
     enum CodingKeys: String, CodingKey {
         case shouldAvoid = "should_avoid"
@@ -156,10 +213,15 @@ enum HealthAnalysisError: LocalizedError {
 actor HealthAnalysisAPI {
     static let shared = HealthAnalysisAPI()
     
-    func analyzeHealthImpact(for recipe: Recipe) async throws -> HealthAnalysis {
-        // Check if user has uploaded blood test
-        guard let bloodTestId = UserDefaults.standard.string(forKey: "bloodTestID") else {
-            throw HealthAnalysisError.noBloodTestFound
+    func analyzeHealthImpact(for recipe: Recipe, includeBloodTest: Bool = false) async throws -> HealthAnalysis {
+        var bloodTestId: String? = nil
+        
+        // Only check for blood test if user wants to include it
+        if includeBloodTest {
+            guard let storedBloodTestId = UserDefaults.standard.string(forKey: "bloodTestID") else {
+                throw HealthAnalysisError.noBloodTestFound
+            }
+            bloodTestId = storedBloodTestId
         }
         
         // Make actual API call to backend
@@ -174,24 +236,53 @@ actor HealthAnalysisAPI {
         
         let requestBody = HealthAnalysisRequest(
             recipe: recipe,
-            bloodTestId: bloodTestId
+            bloodTestId: bloodTestId,
+            includeBloodTest: includeBloodTest
         )
         
         request.httpBody = try JSONEncoder().encode(requestBody)
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-            throw HealthAnalysisError.serverError("Server returned error")
+        // DEBUG: Print request details
+        print("🚀 HEALTH ANALYSIS REQUEST:")
+        print("Include Blood Test: \(includeBloodTest)")
+        print("Blood Test ID: \(bloodTestId ?? "nil")")
+        print("Recipe: \(recipe.name)")
+        
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ Invalid HTTP response")
+            throw HealthAnalysisError.serverError("Invalid response")
         }
         
-        let apiResponse = try JSONDecoder().decode(HealthAnalysisAPIResponse.self, from: data)
+        print("📡 HTTP Status Code: \(httpResponse.statusCode)")
         
-        guard apiResponse.success else {
-            throw HealthAnalysisError.analysisError(apiResponse.error ?? "Analysis failed")
+        guard httpResponse.statusCode == 200 else {
+            print("❌ Server error - Status: \(httpResponse.statusCode)")
+            if let errorString = String(data: data, encoding: .utf8) {
+                print("Error response: \(errorString)")
+            }
+            throw HealthAnalysisError.serverError("Server returned status \(httpResponse.statusCode)")
         }
         
-        return apiResponse.analysis
+        // DEBUG: Print raw response
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("📦 RAW API RESPONSE:")
+            print(jsonString)
+        }
+        
+        do {
+            let apiResponse = try JSONDecoder().decode(HealthAnalysisAPIResponse.self, from: data)
+            print("✅ JSON decoded successfully")
+            return apiResponse.analysis
+        } catch {
+            print("❌ JSON DECODING ERROR:")
+            print("Error: \(error)")
+            if let decodingError = error as? DecodingError {
+                print("Decoding error details: \(decodingError)")
+            }
+            throw HealthAnalysisError.analysisError("Failed to decode response: \(error.localizedDescription)")
+        }
     }
 }
 
@@ -206,6 +297,7 @@ struct HealthReport: View {
     @State private var analysis: HealthAnalysis?
     @State private var showingDetail = false
     @State private var showingNoBloodTestAlert = false
+    @State private var includeBloodTest = false
     
     var body: some View {
         Button(action: analyzeHealth) {
@@ -214,12 +306,13 @@ struct HealthReport: View {
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.black)
                     .frame(height: 88)
+                    .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
                 
                 // Subtle border
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
                     .frame(height: 88)
-                
+            
                 HStack(spacing: 16) {
                     // Clean, minimal icon
                     Image(systemName: isLoading ? "brain.head.profile" : "heart.text.square.fill")
@@ -229,39 +322,68 @@ struct HealthReport: View {
                         .background(Color.white.opacity(0.1))
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .symbolEffect(.pulse, isActive: isLoading)
-                    
-                    VStack(alignment: .leading, spacing: 2) {
+                
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("AI Health Analysis")
                             .font(.system(size: 17, weight: .medium))
                             .foregroundColor(.white)
                         
-                        Text(isLoading ? "Analyzing..." : "Personalized health insights")
+                        Text(includeBloodTest ? "Include blood test report" : "General health insights")
                             .font(.system(size: 15))
                             .foregroundColor(.white.opacity(0.6))
                     }
                     
                     Spacer()
                     
-                    // Clean arrow or loading
-                    if isLoading {
+                    // Custom toggle or loading
+                    if !isLoading {
+                        Button(action: {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                includeBloodTest.toggle()
+                            }
+                        }) {
+                            ZStack {
+                                // Toggle background
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(includeBloodTest ? Color.green : Color.clear)
+                                    .frame(width: 52, height: 32)
+                                
+                                // Toggle border
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.gray.opacity(0.4), lineWidth: 1)
+                                    .frame(width: 52, height: 32)
+                                
+                                // Toggle circle
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 28, height: 28)
+                                    .offset(x: includeBloodTest ? 10 : -10)
+                                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: includeBloodTest)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    } else {
                         ProgressView()
                             .tint(.white.opacity(0.6))
                             .scaleEffect(0.9)
-                    } else {
+                    }
+                    
+                    // Chevron
+                    if !isLoading {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.white.opacity(0.4))
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.vertical, 22)
             }
         }
         .buttonStyle(.plain)
         .disabled(isLoading)
         .sheet(isPresented: $showingDetail) {
             if let analysis = analysis {
-                HealthAnalysisDetailView(analysis: analysis, recipe: recipe)
+                HealthAnalysisDetailView(analysis: analysis, recipe: recipe, includeBloodTest: includeBloodTest)
             }
         }
         .alert("Blood Test Required", isPresented: $showingNoBloodTestAlert) {
@@ -286,7 +408,7 @@ struct HealthReport: View {
         
         Task {
             do {
-                let result = try await HealthAnalysisAPI.shared.analyzeHealthImpact(for: recipe)
+                let result = try await HealthAnalysisAPI.shared.analyzeHealthImpact(for: recipe, includeBloodTest: includeBloodTest)
                 
                 await MainActor.run {
                     self.analysis = result
@@ -296,11 +418,19 @@ struct HealthReport: View {
             } catch {
                 await MainActor.run {
                     self.isLoading = false
+                    
+                    // DEBUG: Print detailed error info
+                    print("🔥 HEALTH ANALYSIS ERROR:")
+                    print("Error type: \(type(of: error))")
+                    print("Error description: \(error.localizedDescription)")
+                    print("Include blood test was: \(includeBloodTest)")
+                    
                     if error is HealthAnalysisError && error.localizedDescription.contains("blood test") {
+                        print("👆 Showing blood test alert")
                         self.showingNoBloodTestAlert = true
                     } else {
+                        print("👆 Other error - not showing alert")
                         // TODO: Show other error states
-                        print("Health analysis error: \(error.localizedDescription)")
                     }
                 }
             }
@@ -315,20 +445,26 @@ struct HealthReport: View {
 struct HealthAnalysisDetailView: View {
     let analysis: HealthAnalysis
     let recipe: Recipe
+    let includeBloodTest: Bool
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         NavigationView {
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: 32) {
                     // Hero Score Section
                     heroScoreSection
                     
                     // Personal Message
                     personalMessageSection
                     
-                    // Blood Markers Impact
-                    bloodMarkersSection
+                    // Smart Recommendations - moved to top for better UX
+                    recommendationsSection
+                    
+                    // Blood Markers Impact - only show if blood test is included AND data exists
+                    if includeBloodTest && !(analysis.bloodMarkersAffected?.isEmpty ?? true) {
+                        bloodMarkersSection
+                    }
                     
                     // Main Culprits
                     if !analysis.mainCulprits.isEmpty {
@@ -339,117 +475,135 @@ struct HealthAnalysisDetailView: View {
                     if !analysis.healthBoosters.isEmpty {
                         boostersSection
                     }
-                    
-                    // Recommendations
-                    recommendationsSection
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 24)
+                .padding(.top, 20)
                 .padding(.bottom, 40)
             }
-            .background(
-                LinearGradient(
-                    gradient: Gradient(colors: [
-                        analysis.riskLevel.color.opacity(0.1),
-                        analysis.riskLevel.color.opacity(0.05),
-                        Color.clear
-                    ]),
-                    startPoint: .top,
-                    endPoint: .bottom
-                )
-            )
-            .navigationTitle("Health Impact")
-            .navigationBarTitleDisplayMode(.inline)
+            .background(Color.white)
+            .navigationTitle("Health Analysis")
+            .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+                    Button("Done") { 
+                        dismiss() 
+                    }
+                    .foregroundColor(.black)
+                    .font(.system(size: 17, weight: .medium))
                 }
             }
         }
     }
     
     private var heroScoreSection: some View {
-        VStack(spacing: 16) {
-            // Score Circle
-            ZStack {
-                Circle()
-                    .stroke(analysis.riskLevel.color.opacity(0.3), lineWidth: 8)
-                    .frame(width: 140, height: 140)
+        VStack(spacing: 20) {
+            // Minimalist Score Display
+            VStack(spacing: 12) {
+                Text("\(analysis.overallScore)")
+                    .font(.system(size: 72, weight: .black, design: .rounded))
+                    .foregroundColor(.black)
                 
-                Circle()
-                    .trim(from: 0, to: CGFloat(analysis.overallScore) / 100)
-                    .stroke(analysis.riskLevel.color, style: StrokeStyle(lineWidth: 8, lineCap: .round))
-                    .frame(width: 140, height: 140)
-                    .rotationEffect(.degrees(-90))
-                
-                VStack(spacing: 4) {
-                    Text("\(analysis.overallScore)")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .foregroundColor(analysis.riskLevel.color)
-                    
-                    Text("HEALTH\nSCORE")
-                        .font(.caption.bold())
-                        .multilineTextAlignment(.center)
-                        .foregroundColor(.secondary)
-                }
+                Text("HEALTH SCORE")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.gray)
+                    .tracking(2)
             }
             
-            // Risk Level Badge
-            HStack(spacing: 8) {
-                Text(analysis.riskLevel.emoji)
-                    .font(.title2)
+            // Clean Risk Level
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(analysis.riskLevel.color)
+                    .frame(width: 12, height: 12)
                 
-                Text(analysis.riskLevel.title)
-                    .font(.headline.bold())
-                    .foregroundColor(analysis.riskLevel.color)
+                Text(analysis.riskLevel.title.uppercased())
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.black)
+                    .tracking(1)
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
-            .background(
-                Capsule()
-                    .fill(analysis.riskLevel.color.opacity(0.15))
-            )
         }
-        .padding(.top, 20)
+        .padding(.vertical, 24)
     }
     
     private var personalMessageSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "message.fill")
-                    .foregroundColor(.blue)
-                Text("Personal Message")
-                    .font(.headline.bold())
-                Spacer()
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            Text("ANALYSIS")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.gray)
+                .tracking(2)
             
             Text(analysis.personalMessage)
-                .font(.body)
-                .padding(16)
-                .background(
-                    RoundedRectangle(cornerRadius: 16)
-                        .fill(Color.blue.opacity(0.1))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.blue.opacity(0.3), lineWidth: 1)
-                )
+                .font(.system(size: 17, weight: .regular))
+                .foregroundColor(.black)
+                .lineSpacing(4)
         }
+        .padding(.vertical, 20)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.black.opacity(0.1)),
+            alignment: .bottom
+        )
+    }
+    
+    private var recommendationsSection: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("RECOMMENDATIONS")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundColor(.gray)
+                .tracking(2)
+            
+            VStack(spacing: 16) {
+                ForEach(analysis.recommendations.modifications, id: \.self) { modification in
+                    HStack(alignment: .top, spacing: 16) {
+                        Circle()
+                            .fill(Color.black)
+                            .frame(width: 6, height: 6)
+                            .padding(.top, 6)
+                        
+                        Text(modification)
+                            .font(.system(size: 16, weight: .regular))
+                            .foregroundColor(.black)
+                            .lineSpacing(2)
+                        
+                        Spacer()
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 20)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.black.opacity(0.1)),
+            alignment: .bottom
+        )
     }
     
     private var bloodMarkersSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "drop.fill")
-                    .foregroundColor(.red)
-                Text("Blood Markers Impact")
-                    .font(.headline.bold())
-                Spacer()
-            }
-            
-            VStack(spacing: 12) {
-                ForEach(analysis.bloodMarkersAffected) { marker in
-                    BloodMarkerCard(marker: marker)
-                }
+        VStack(alignment: .leading, spacing: 20) {
+            bloodMarkersSectionHeader
+            bloodMarkersList
+        }
+        .padding(.vertical, 20)
+        .overlay(
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.black.opacity(0.1)),
+            alignment: .bottom
+        )
+    }
+    
+    private var bloodMarkersSectionHeader: some View {
+        Text("BLOOD MARKERS")
+            .font(.system(size: 14, weight: .bold))
+            .foregroundColor(.gray)
+            .tracking(2)
+    }
+    
+    private var bloodMarkersList: some View {
+        VStack(spacing: 16) {
+            ForEach(analysis.bloodMarkersAffected ?? []) { marker in
+                BloodMarkerCard(marker: marker)
             }
         }
     }
@@ -457,15 +611,15 @@ struct HealthAnalysisDetailView: View {
     private var culpritsSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Text("🚨")
+                Text("⚠️")
                     .font(.title2)
                 Text("Main Culprits")
                     .font(.headline.bold())
-                    .foregroundColor(.red)
+                    .foregroundColor(.primary)
                 Spacer()
             }
             
-            VStack(spacing: 10) {
+            VStack(spacing: 12) {
                 ForEach(analysis.mainCulprits) { culprit in
                     IngredientImpactCard(impact: culprit, isNegative: true)
                 }
@@ -480,45 +634,13 @@ struct HealthAnalysisDetailView: View {
                     .font(.title2)
                 Text("Health Boosters")
                     .font(.headline.bold())
-                    .foregroundColor(.green)
-                Spacer()
-            }
-            
-            VStack(spacing: 10) {
-                ForEach(analysis.healthBoosters) { booster in
-                    IngredientImpactCard(impact: booster, isNegative: false)
-                }
-            }
-        }
-    }
-    
-    private var recommendationsSection: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Image(systemName: "lightbulb.fill")
-                    .foregroundColor(.yellow)
-                Text("Smart Recommendations")
-                    .font(.headline.bold())
+                    .foregroundColor(.primary)
                 Spacer()
             }
             
             VStack(spacing: 12) {
-                ForEach(analysis.recommendations.modifications, id: \.self) { modification in
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.system(size: 16))
-                        
-                        Text(modification)
-                            .font(.subheadline)
-                        
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12)
-                            .fill(Color.green.opacity(0.1))
-                    )
+                ForEach(analysis.healthBoosters) { booster in
+                    IngredientImpactCard(impact: booster, isNegative: false)
                 }
             }
         }
@@ -529,51 +651,73 @@ struct HealthAnalysisDetailView: View {
 // MARK: – Supporting Views
 // -------------------------------------------------------------------------
 
+struct BloodMarkerRow: View {
+    let marker: String
+    
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "circle.fill")
+                .foregroundColor(.orange)
+                .font(.system(size: 8))
+            
+            Text(marker.capitalized)
+                .font(.subheadline)
+                .foregroundColor(.primary)
+            
+            Spacer()
+        }
+        .padding(16)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
+    }
+}
+
 struct BloodMarkerCard: View {
     let marker: BloodMarkerImpact
     
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
                 Text(marker.marker)
-                    .font(.subheadline.bold())
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.black)
                 
-                HStack {
-                    Text("Current: \(marker.currentLevel, specifier: "%.0f")")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    
-                    Text("•")
-                        .foregroundColor(.secondary)
-                    
-                    Text("Target: \(marker.targetRange)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-            
-            Spacer()
-            
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(marker.predictedImpact)
-                    .font(.subheadline.bold())
-                    .foregroundColor(marker.isOutOfRange ? .red : .green)
+                Spacer()
                 
                 if marker.isOutOfRange {
-                    Text("⚠️ Out of range")
-                        .font(.caption)
-                        .foregroundColor(.red)
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 8, height: 8)
                 }
             }
+            
+            if marker.currentLevel > 0 {
+                HStack {
+                    Text("Current: \(marker.currentLevel, specifier: "%.0f")")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                    
+                    Text("•")
+                        .foregroundColor(.gray)
+                    
+                    Text("Target: \(marker.targetRange)")
+                        .font(.system(size: 14))
+                        .foregroundColor(.gray)
+                }
+            }
+            
+            Text(marker.predictedImpact)
+                .font(.system(size: 15))
+                .foregroundColor(.black)
+                .lineSpacing(2)
         }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(marker.isOutOfRange ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-        )
+        .padding(.vertical, 12)
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(marker.isOutOfRange ? Color.red.opacity(0.3) : Color.green.opacity(0.3), lineWidth: 1)
+            Rectangle()
+                .frame(height: 1)
+                .foregroundColor(Color.black.opacity(0.05)),
+            alignment: .bottom
         )
     }
 }
@@ -597,16 +741,16 @@ struct IngredientImpactCard: View {
             }
             
             Spacer()
+            
+            // Subtle indicator for severity
+            Circle()
+                .fill(impact.riskLevel.color)
+                .frame(width: 8, height: 8)
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(isNegative ? Color.red.opacity(0.1) : Color.green.opacity(0.1))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(isNegative ? Color.red.opacity(0.3) : Color.green.opacity(0.3), lineWidth: 1)
-        )
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: Color.black.opacity(0.05), radius: 2, x: 0, y: 1)
     }
 }
 
