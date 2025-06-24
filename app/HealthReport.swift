@@ -225,7 +225,7 @@ actor HealthAnalysisAPI {
         }
         
         // Make actual API call to backend
-        guard let url = URL(string: "http://localhost:8000/analyze-health-impact") else {
+        guard let url = URL(string: "https://recipewallet.onrender.com/analyze-health-impact") else {
             throw HealthAnalysisError.invalidURL
         }
         

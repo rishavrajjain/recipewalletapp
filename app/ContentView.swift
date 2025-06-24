@@ -82,7 +82,7 @@ private struct APIRecipe: Decodable {
 }
 
 class RecipeAPIService {
-    private let baseURL = URL(string: "http://127.0.0.1:8000")!
+    private let baseURL = URL(string: "https://recipewallet.onrender.com")!
     
     func importRecipeFromReel(reelURL: String) async throws -> Recipe {
         let importURL = baseURL.appendingPathComponent("import-recipe")

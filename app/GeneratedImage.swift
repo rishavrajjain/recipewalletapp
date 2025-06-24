@@ -31,7 +31,7 @@ private struct ImageGenerationAPIResponse: Decodable {
 
 // MARK: - API Service
 class StepImageAPIService {
-    private let baseURL = URL(string: "http://127.0.0.1:8000")!
+    private let baseURL = URL(string: "https://recipewallet.onrender.com")!
     
     func generateImages(for steps: [String], recipeTitle: String) async throws -> [GeneratedImage] {
         let url = baseURL.appendingPathComponent("generate-step-images")
