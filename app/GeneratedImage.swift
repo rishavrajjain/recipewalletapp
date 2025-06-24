@@ -31,10 +31,8 @@ private struct ImageGenerationAPIResponse: Decodable {
 
 // MARK: - API Service
 class StepImageAPIService {
-    private let baseURL = URL(string: "https://recipewallet.onrender.com")!
-    
     func generateImages(for steps: [String], recipeTitle: String) async throws -> [GeneratedImage] {
-        let url = baseURL.appendingPathComponent("generate-step-images")
+        let url = APIConfig.endpoint("generate-step-images")
         let request = ImageGenerationRequest(instructions: steps, recipeTitle: recipeTitle)
         
         let encoder = JSONEncoder()

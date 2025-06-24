@@ -225,9 +225,7 @@ actor HealthAnalysisAPI {
         }
         
         // Make actual API call to backend
-        guard let url = URL(string: "https://recipewallet.onrender.com/analyze-health-impact") else {
-            throw HealthAnalysisError.invalidURL
-        }
+        let url = APIConfig.endpoint("analyze-health-impact")
         
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -768,7 +766,12 @@ struct _HealthReportPreview: View {
                     name: "Cheesy Pasta",
                     description: "Rich and creamy",
                     imageUrl: "",
-                    ingredients: ["pasta", "cheese", "butter", "cream"],
+                    ingredients: [
+                        Ingredient(name: "pasta", imageUrl: ""),
+                        Ingredient(name: "cheese", imageUrl: ""),
+                        Ingredient(name: "butter", imageUrl: ""),
+                        Ingredient(name: "cream", imageUrl: "")
+                    ],
                     cookTime: 20,
                     isFromReel: false,
                     steps: ["Cook pasta", "Add cheese"],

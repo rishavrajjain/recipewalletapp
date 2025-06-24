@@ -10,23 +10,64 @@ extension Notification.Name {
 // MARK: - Models
 // ==================================================x======================
 
+struct Ingredient: Codable, Identifiable, Hashable {
+    let id = UUID()
+    let name: String
+    let imageUrl: String
+    
+    enum CodingKeys: String, CodingKey {
+        case name
+        case imageUrl
+    }
+    
+    // Helper initializer for backward compatibility
+    init(name: String, imageUrl: String = "") {
+        self.name = name
+        self.imageUrl = imageUrl
+    }
+    
+    // Computed property that returns a usable URL – falls back to Unsplash if missing
+    var resolvedImageURL: URL? {
+        if !imageUrl.trimmingCharacters(in: .whitespaces).isEmpty,
+           let url = URL(string: imageUrl) {
+            return url
+        }
+        // Fallback to LoremFlickr keyword image (reliable)
+        let keyword = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "food"
+        return URL(string: "https://loremflickr.com/400/400/\(keyword)")
+    }
+}
+
 struct Recipe: Identifiable, Codable, Hashable {
     let id: String
     var name: String
     let description: String
     let imageUrl: String
-    let ingredients: [String]
+    let ingredients: [Ingredient]  // Changed from [String] to [Ingredient]
     let cookTime: Int
     let isFromReel: Bool
     let steps: [String]
     let createdAt: Date
     
-    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, ingredients: [String], cookTime: Int, isFromReel: Bool = false, steps: [String], createdAt: Date = Date()) {
+    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, ingredients: [Ingredient], cookTime: Int, isFromReel: Bool = false, steps: [String], createdAt: Date = Date()) {
         self.id = id
         self.name = name
         self.description = description
         self.imageUrl = imageUrl
         self.ingredients = ingredients
+        self.cookTime = cookTime
+        self.isFromReel = isFromReel
+        self.steps = steps
+        self.createdAt = createdAt
+    }
+    
+    // Backward compatibility initializer for string ingredients
+    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, ingredients: [String], cookTime: Int, isFromReel: Bool = false, steps: [String], createdAt: Date = Date()) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.imageUrl = imageUrl
+        self.ingredients = ingredients.map { Ingredient(name: $0) }
         self.cookTime = cookTime
         self.isFromReel = isFromReel
         self.steps = steps
@@ -58,12 +99,21 @@ private struct APIResponse: Decodable {
     let error: String?
 }
 
+private struct APIIngredient: Decodable {
+    let name: String
+    let imageUrl: String?
+    
+    func asIngredient() -> Ingredient {
+        Ingredient(name: name, imageUrl: imageUrl ?? "")
+    }
+}
+
 private struct APIRecipe: Decodable {
     let title: String
     let description: String?
     let imageUrl: String?
     let thumbnailUrl: String?
-    let ingredients: [String]?
+    let ingredients: [APIIngredient]?
     let cookTimeMinutes: Int?
     let totalTimeMinutes: Int?
     let steps: [String]?
@@ -73,7 +123,7 @@ private struct APIRecipe: Decodable {
             name: title,
             description: description ?? "Recipe from Reel",
             imageUrl: imageUrl ?? thumbnailUrl ?? "",
-            ingredients: (ingredients ?? []).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty },
+            ingredients: (ingredients ?? []).map { $0.asIngredient() },
             cookTime: cookTimeMinutes ?? totalTimeMinutes ?? 25,
             isFromReel: true,
             steps: (steps ?? []).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -82,10 +132,8 @@ private struct APIRecipe: Decodable {
 }
 
 class RecipeAPIService {
-    private let baseURL = URL(string: "https://recipewallet.onrender.com")!
-    
     func importRecipeFromReel(reelURL: String) async throws -> Recipe {
-        let importURL = baseURL.appendingPathComponent("import-recipe")
+        let importURL = APIConfig.endpoint("import-recipe")
         
         var request = URLRequest(url: importURL)
         request.httpMethod = "POST"
@@ -264,7 +312,7 @@ class RecipeStore: ObservableObject {
             let lowercasedQuery = searchText.lowercased()
             filteredRecipes = recipes.filter {
                 $0.name.lowercased().contains(lowercasedQuery) ||
-                $0.ingredients.joined().lowercased().contains(lowercasedQuery)
+                $0.ingredients.map { $0.name }.joined().lowercased().contains(lowercasedQuery)
             }.sorted { $0.createdAt > $1.createdAt }
         }
     }
@@ -298,8 +346,22 @@ class RecipeStore: ObservableObject {
     
     private func loadSampleData() {
         self.recipes = [
-            Recipe(name: "Classic Spaghetti Carbonara", description: "A creamy Italian pasta dish.", imageUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=400", ingredients: ["200g Spaghetti", "100g Guanciale", "2 large Eggs", "50g Pecorino Romano", "Black Pepper"], cookTime: 20, steps: ["Boil spaghetti.", "Cook guanciale.", "Mix eggs and cheese.", "Combine all ingredients."]),
-            Recipe(name: "Veg Stir Fry Soupy Udon Noodles", description: "Quick and healthy udon noodle soup.", imageUrl: "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&q=80&w=400", ingredients: ["1 lb Chicken Breasts", "1 tbsp Soy Sauce", "Veggies (Peppers, Carrot, Broccoli)", "Garlic, Ginger"], cookTime: 25, steps: ["Marinate chicken.", "Stir-fry chicken.", "Add veggies.", "Add sauce and serve."])
+            Recipe(name: "Classic Spaghetti Carbonara", description: "A creamy Italian pasta dish.", imageUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=400", ingredients: [
+                Ingredient(name: "200g Spaghetti", imageUrl: "https://images.unsplash.com/photo-1551892589-865f69869476?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "100g Guanciale", imageUrl: "https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "2 large Eggs", imageUrl: "https://images.unsplash.com/photo-1518569656558-1f25e69d93d7?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "50g Pecorino Romano", imageUrl: "https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "Black Pepper", imageUrl: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&q=80&w=400")
+            ], cookTime: 20, steps: ["Boil spaghetti.", "Cook guanciale.", "Mix eggs and cheese.", "Combine all ingredients."]),
+            Recipe(name: "Veg Stir Fry Soupy Udon Noodles", description: "Quick and healthy udon noodle soup.", imageUrl: "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&q=80&w=400", ingredients: [
+                Ingredient(name: "1 lb Chicken Breasts", imageUrl: "https://images.unsplash.com/photo-1604503468506-a8da13d82791?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "1 tbsp Soy Sauce", imageUrl: "https://images.unsplash.com/photo-1609501676725-7186f734b8d8?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "Bell Peppers", imageUrl: "https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "Carrots", imageUrl: "https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "Broccoli", imageUrl: "https://images.unsplash.com/photo-1459411621453-7b03977f4bfc?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "Garlic", imageUrl: "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&q=80&w=400"),
+                Ingredient(name: "Ginger", imageUrl: "https://images.unsplash.com/photo-1615485500704-8e990f9900f7?auto=format&fit=crop&q=80&w=400")
+            ], cookTime: 25, steps: ["Marinate chicken.", "Stir-fry chicken.", "Add veggies.", "Add sauce and serve."])
         ]
         if let firstRecipe = self.recipes.first {
             self.collections = [

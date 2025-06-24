@@ -258,7 +258,7 @@ struct UserInfoView: View {
     
     /// Build multipart/form-data request with kitchen photos and PDF
     private func buildUserInfoRequest(boundary: String) throws -> URLRequest? {
-        guard let url = URL(string: "https://recipewallet.onrender.com/upload-user-info") else { return nil }
+        let url = APIConfig.endpoint("upload-user-info")
         
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
