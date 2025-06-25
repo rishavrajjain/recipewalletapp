@@ -49,11 +49,19 @@ struct HealthAnalysis: Identifiable {
 struct IngredientImpact: Identifiable {
     let id = UUID()
     let ingredient: String
-    let impact: String
-    let severity: String  // Changed to String to match backend
+    let impact: String?  // Optional since backend might use different field names
+    let severity: String?  // Optional since backend might not provide this
+    let concern: String?  // Backend uses "concern" for main culprits
+    let benefit: String?  // Backend uses "benefit" for health boosters
+    
+    // Computed property to get the actual impact/concern/benefit text
+    var impactText: String {
+        return impact ?? concern ?? benefit ?? "No details available"
+    }
     
     // Convert string severity to RiskLevel for UI
     var riskLevel: HealthAnalysis.RiskLevel {
+        guard let severity = severity else { return .medium }
         switch severity.lowercased() {
         case "high": return .high
         case "medium": return .medium
@@ -70,10 +78,36 @@ struct IngredientImpact: Identifiable {
     }
 }
 
-struct HealthRecommendations {
-    let shouldAvoid: Bool
-    let modifications: [String]
-    let alternativeRecipes: [String]
+struct HealthRecommendations: Codable {
+    let shouldAvoid: Bool?
+    let modifications: [String]?
+    let alternativeRecipes: [String]?
+    
+    // Backend might send dynamic fields instead of fixed arrays
+    let reduce_sodium: String?
+    let reduce_sugar: String?
+    let leaner_protein: String?
+    let increase_vegetables: String?
+    let whole_grain_option: String?
+    
+    // Computed property to get all recommendations as an array
+    var allModifications: [String] {
+        var mods: [String] = []
+        
+        // Add from modifications array if available
+        if let modifications = modifications {
+            mods.append(contentsOf: modifications)
+        }
+        
+        // Add from dynamic fields
+        if let reduce_sodium = reduce_sodium { mods.append(reduce_sodium) }
+        if let reduce_sugar = reduce_sugar { mods.append(reduce_sugar) }
+        if let leaner_protein = leaner_protein { mods.append(leaner_protein) }
+        if let increase_vegetables = increase_vegetables { mods.append(increase_vegetables) }
+        if let whole_grain_option = whole_grain_option { mods.append(whole_grain_option) }
+        
+        return mods
+    }
 }
 
 struct BloodMarkerImpact: Identifiable {
@@ -89,8 +123,32 @@ struct BloodMarkerImpact: Identifiable {
 // MARK: – API Request/Response Models
 // -------------------------------------------------------------------------
 
+struct SimpleRecipe: Codable {
+    let id: String
+    let name: String
+    let description: String
+    let imageUrl: String
+    let ingredients: [String]  // Simple names only
+    let cookTime: Int
+    let isFromReel: Bool
+    let steps: [String]
+    let createdAt: Date
+    
+    init(from recipe: Recipe) {
+        self.id = recipe.id
+        self.name = recipe.name
+        self.description = recipe.description
+        self.imageUrl = recipe.imageUrl
+        self.ingredients = recipe.ingredients.map { $0.name }
+        self.cookTime = recipe.cookTime
+        self.isFromReel = recipe.isFromReel
+        self.steps = recipe.steps
+        self.createdAt = recipe.createdAt
+    }
+}
+
 struct HealthAnalysisRequest: Codable {
-    let recipe: Recipe
+    let recipe: SimpleRecipe
     let bloodTestId: String?
     let includeBloodTest: Bool
     
@@ -98,6 +156,40 @@ struct HealthAnalysisRequest: Codable {
         case recipe
         case bloodTestId = "blood_test_id"
         case includeBloodTest = "include_blood_test"
+    }
+}
+
+// Backend compatible ingredient format
+struct BackendIngredient: Codable {
+    let name: String
+    let imageUrl: String
+}
+
+// Backend compatible recipe format
+struct BackendRecipe: Codable {
+    let id: String
+    let name: String
+    let description: String
+    let imageUrl: String
+    let ingredients: [BackendIngredient]  // Backend expects objects with name and imageUrl
+    let cookTime: Int
+    let isFromReel: Bool
+    let steps: [String]
+    let createdAt: Date
+    
+    // Use camelCase field names (backend expects camelCase)
+    
+    // Convert from new Recipe format to backend format
+    init(from recipe: Recipe) {
+        self.id = recipe.id
+        self.name = recipe.name
+        self.description = recipe.description
+        self.imageUrl = recipe.imageUrl
+        self.ingredients = recipe.ingredients.map { BackendIngredient(name: $0.name, imageUrl: $0.imageUrl) }
+        self.cookTime = recipe.cookTime
+        self.isFromReel = recipe.isFromReel
+        self.steps = recipe.steps
+        self.createdAt = recipe.createdAt
     }
 }
 
@@ -165,14 +257,8 @@ extension IngredientImpact: Codable {
         case ingredient
         case impact
         case severity
-    }
-}
-
-extension HealthRecommendations: Codable {
-    enum CodingKeys: String, CodingKey {
-        case shouldAvoid = "should_avoid"
-        case modifications
-        case alternativeRecipes = "alternative_recipes"
+        case concern
+        case benefit
     }
 }
 
@@ -233,20 +319,38 @@ actor HealthAnalysisAPI {
         request.timeoutInterval = 30
         
         let requestBody = HealthAnalysisRequest(
-            recipe: recipe,
+            recipe: SimpleRecipe(from: recipe),  // Convert to backend format
             bloodTestId: bloodTestId,
             includeBloodTest: includeBloodTest
         )
         
-        request.httpBody = try JSONEncoder().encode(requestBody)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        request.httpBody = try encoder.encode(requestBody)
         
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        // DEBUG: Print request details
+        // DEBUG: Print FULL request details
         print("🚀 HEALTH ANALYSIS REQUEST:")
         print("Include Blood Test: \(includeBloodTest)")
         print("Blood Test ID: \(bloodTestId ?? "nil")")
         print("Recipe: \(recipe.name)")
+        print("Original Recipe Ingredients:")
+        for (i, ingredient) in recipe.ingredients.enumerated() {
+            print("  [\(i)] name: '\(ingredient.name)', imageUrl: '\(ingredient.imageUrl)'")
+        }
+        
+        let backendRecipe = BackendRecipe(from: recipe)
+        print("Backend Recipe Ingredients:")
+        for (i, ingredient) in backendRecipe.ingredients.enumerated() {
+            print("  [\(i)] name: '\(ingredient.name)', imageUrl: '\(ingredient.imageUrl)'")
+        }
+        
+        // Print the actual JSON being sent
+        if let jsonString = String(data: request.httpBody!, encoding: .utf8) {
+            print("📤 FULL JSON PAYLOAD:")
+            print(jsonString)
+        }
+        
+        let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
             print("❌ Invalid HTTP response")
@@ -294,8 +398,6 @@ struct HealthReport: View {
     @State private var isLoading = false
     @State private var analysis: HealthAnalysis?
     @State private var showingDetail = false
-    @State private var showingNoBloodTestAlert = false
-    @State private var includeBloodTest = false
     
     var body: some View {
         Button(action: analyzeHealth) {
@@ -321,57 +423,28 @@ struct HealthReport: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .symbolEffect(.pulse, isActive: isLoading)
                 
-                    VStack(alignment: .leading, spacing: 4) {
+                                    VStack(alignment: .leading, spacing: 4) {
                         Text("AI Health Analysis")
                             .font(.system(size: 17, weight: .medium))
                             .foregroundColor(.white)
                         
-                        Text(includeBloodTest ? "Include blood test report" : "General health insights")
+                        Text("General health insights")
                             .font(.system(size: 15))
                             .foregroundColor(.white.opacity(0.6))
-                    }
-                    
-                    Spacer()
-                    
-                    // Custom toggle or loading
-                    if !isLoading {
-                        Button(action: {
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                includeBloodTest.toggle()
-                            }
-                        }) {
-                            ZStack {
-                                // Toggle background
-                                RoundedRectangle(cornerRadius: 16)
-                                    .fill(includeBloodTest ? Color.green : Color.clear)
-                                    .frame(width: 52, height: 32)
-                                
-                                // Toggle border
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(Color.gray.opacity(0.4), lineWidth: 1)
-                                    .frame(width: 52, height: 32)
-                                
-                                // Toggle circle
-                                Circle()
-                                    .fill(Color.white)
-                                    .frame(width: 28, height: 28)
-                                    .offset(x: includeBloodTest ? 10 : -10)
-                                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: includeBloodTest)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                    } else {
-                        ProgressView()
-                            .tint(.white.opacity(0.6))
-                            .scaleEffect(0.9)
-                    }
-                    
-                    // Chevron
-                    if !isLoading {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.white.opacity(0.4))
-                    }
+                }
+                
+                Spacer()
+                
+                // Loading or chevron
+                if isLoading {
+                    ProgressView()
+                        .tint(.white.opacity(0.6))
+                        .scaleEffect(0.9)
+                } else {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white.opacity(0.4))
+                }
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 22)
@@ -381,33 +454,30 @@ struct HealthReport: View {
         .disabled(isLoading)
         .sheet(isPresented: $showingDetail) {
             if let analysis = analysis {
-                HealthAnalysisDetailView(analysis: analysis, recipe: recipe, includeBloodTest: includeBloodTest)
+                HealthAnalysisDetailView(analysis: analysis, recipe: recipe, includeBloodTest: false)
             }
-        }
-        .alert("Blood Test Required", isPresented: $showingNoBloodTestAlert) {
-            Button("Upload Now") {
-                // This will be handled by the parent view to show UserInfoView
-                NotificationCenter.default.post(name: .showUserProfile, object: nil)
-            }
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("Please upload your blood test report first to get personalized health analysis.")
         }
     }
     
     private func analyzeHealth() {
+        // If we already have an analysis cached, just show it
+        if let _ = analysis {
+            showingDetail = true
+            return
+        }
+
         guard !isLoading else { return }
-        
+
         isLoading = true
-        
+
         // Haptic feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
         impactFeedback.impactOccurred()
-        
+
         Task {
             do {
-                let result = try await HealthAnalysisAPI.shared.analyzeHealthImpact(for: recipe, includeBloodTest: includeBloodTest)
-                
+                let result = try await HealthAnalysisAPI.shared.analyzeHealthImpact(for: recipe, includeBloodTest: false)
+
                 await MainActor.run {
                     self.analysis = result
                     self.isLoading = false
@@ -416,20 +486,8 @@ struct HealthReport: View {
             } catch {
                 await MainActor.run {
                     self.isLoading = false
-                    
-                    // DEBUG: Print detailed error info
-                    print("🔥 HEALTH ANALYSIS ERROR:")
-                    print("Error type: \(type(of: error))")
-                    print("Error description: \(error.localizedDescription)")
-                    print("Include blood test was: \(includeBloodTest)")
-                    
-                    if error is HealthAnalysisError && error.localizedDescription.contains("blood test") {
-                        print("👆 Showing blood test alert")
-                        self.showingNoBloodTestAlert = true
-                    } else {
-                        print("👆 Other error - not showing alert")
-                        // TODO: Show other error states
-                    }
+                    print("🔥 HEALTH ANALYSIS ERROR: \(error.localizedDescription)")
+                    // TODO: Show error state in UI
                 }
             }
         }
@@ -551,7 +609,7 @@ struct HealthAnalysisDetailView: View {
                 .tracking(2)
             
             VStack(spacing: 16) {
-                ForEach(analysis.recommendations.modifications, id: \.self) { modification in
+                ForEach(analysis.recommendations.allModifications, id: \.self) { modification in
                     HStack(alignment: .top, spacing: 16) {
                         Circle()
                             .fill(Color.black)
@@ -733,7 +791,7 @@ struct IngredientImpactCard: View {
                 Text(impact.ingredient)
                     .font(.subheadline.bold())
                 
-                Text(impact.impact)
+                Text(impact.impactText)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }

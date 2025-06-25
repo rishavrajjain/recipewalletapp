@@ -76,7 +76,7 @@ class StepImageViewModel: ObservableObject {
     @Published var loadingStage: LoadingStage = .preparing
     
     enum LoadingStage: String, CaseIterable {
-        case preparing = "Preparing your recipe..."
+        case preparing = "Preparing your images..."
         case generating = "Creating visual magic..."
         case processing = "Adding finishing touches..."
         case completed = "Almost ready!"

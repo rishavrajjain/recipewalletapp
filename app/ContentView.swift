@@ -509,7 +509,7 @@ struct HomeView: View {
         // --- ACTION SHEET IMPLEMENTATION ---
         // This presents the user with the two choices.
         .actionSheet(isPresented: $showingImportOptions) {
-            ActionSheet(title: Text("Options"),
+            ActionSheet(title: Text("More"),
                         message: Text("Choose an option"),
                         buttons: [
                             .default(Text("User Profile")) {
