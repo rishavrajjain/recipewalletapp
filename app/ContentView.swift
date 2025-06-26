@@ -22,19 +22,45 @@ struct Ingredient: Codable, Identifiable, Hashable {
     
     // Helper initializer for backward compatibility
     init(name: String, imageUrl: String = "") {
+        print("🥕 INGREDIENT: Creating ingredient - Name: '\(name)', ImageURL: '\(imageUrl)'")
         self.name = name
         self.imageUrl = imageUrl
+    }
+    
+    // Custom decoder to handle potential data issues
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        let decodedName = try container.decode(String.self, forKey: .name)
+        let decodedImageUrl = try container.decodeIfPresent(String.self, forKey: .imageUrl) ?? ""
+        
+        print("🥕 INGREDIENT: Decoding ingredient - Name: '\(decodedName)', ImageURL: '\(decodedImageUrl)'")
+        
+        // Validate that name is not empty or contains invalid characters
+        guard !decodedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            print("❌ INGREDIENT: Empty ingredient name detected")
+            throw DecodingError.dataCorrupted(DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Ingredient name cannot be empty"
+            ))
+        }
+        
+        self.name = decodedName
+        self.imageUrl = decodedImageUrl
     }
     
     // Computed property that returns a usable URL – falls back to Unsplash if missing
     var resolvedImageURL: URL? {
         if !imageUrl.trimmingCharacters(in: .whitespaces).isEmpty,
            let url = URL(string: imageUrl) {
+            print("🥕 INGREDIENT: Using provided image URL for '\(name)': \(url)")
             return url
         }
         // Fallback to LoremFlickr keyword image (reliable)
         let keyword = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "food"
-        return URL(string: "https://loremflickr.com/400/400/\(keyword)")
+        let fallbackURL = URL(string: "https://loremflickr.com/400/400/\(keyword)")
+        print("🥕 INGREDIENT: Using fallback image URL for '\(name)': \(fallbackURL?.absoluteString ?? "nil")")
+        return fallbackURL
     }
 }
 
@@ -103,6 +129,29 @@ private struct APIIngredient: Decodable {
     let name: String
     let imageUrl: String?
     
+    // Custom decoder to handle both string and object formats
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        
+        if let stringValue = try? container.decode(String.self) {
+            // Backend sent ingredients as strings
+            print("🥕 API_INGREDIENT: Decoding string ingredient: '\(stringValue)'")
+            self.name = stringValue
+            self.imageUrl = nil
+        } else if let dict = try? container.decode([String: String].self) {
+            // Backend sent ingredients as objects
+            print("🥕 API_INGREDIENT: Decoding object ingredient: \(dict)")
+            self.name = dict["name"] ?? ""
+            self.imageUrl = dict["imageUrl"]
+        } else {
+            print("❌ API_INGREDIENT: Failed to decode ingredient")
+            throw DecodingError.typeMismatch(APIIngredient.self, DecodingError.Context(
+                codingPath: decoder.codingPath,
+                debugDescription: "Expected either String or Dictionary for ingredient"
+            ))
+        }
+    }
+    
     func asIngredient() -> Ingredient {
         Ingredient(name: name, imageUrl: imageUrl ?? "")
     }
@@ -119,44 +168,125 @@ private struct APIRecipe: Decodable {
     let steps: [String]?
     
     func asRecipe() -> Recipe {
-        Recipe(
+        print("🍳 API_RECIPE: Converting API recipe to app recipe")
+        print("🍳 API_RECIPE: Title: '\(title)'")
+        print("🍳 API_RECIPE: Description: '\(description ?? "nil")'")
+        print("🍳 API_RECIPE: ImageURL: '\(imageUrl ?? "nil")'")
+        print("🍳 API_RECIPE: ThumbnailURL: '\(thumbnailUrl ?? "nil")'")
+        print("🍳 API_RECIPE: Ingredients count: \(ingredients?.count ?? 0)")
+        print("🍳 API_RECIPE: Cook time minutes: \(cookTimeMinutes ?? 0)")
+        print("🍳 API_RECIPE: Total time minutes: \(totalTimeMinutes ?? 0)")
+        print("🍳 API_RECIPE: Steps count: \(steps?.count ?? 0)")
+        
+        // Debug ingredients
+        if let ingredients = ingredients {
+            for (index, ingredient) in ingredients.enumerated() {
+                print("🍳 API_RECIPE: Ingredient[\(index)]: name='\(ingredient.name)', imageUrl='\(ingredient.imageUrl ?? "nil")'")
+            }
+        }
+        
+        let convertedIngredients = (ingredients ?? []).map { $0.asIngredient() }
+        print("🍳 API_RECIPE: Converted ingredients count: \(convertedIngredients.count)")
+        
+        let finalRecipe = Recipe(
             name: title,
             description: description ?? "Recipe from Reel",
             imageUrl: imageUrl ?? thumbnailUrl ?? "",
-            ingredients: (ingredients ?? []).map { $0.asIngredient() },
+            ingredients: convertedIngredients,
             cookTime: cookTimeMinutes ?? totalTimeMinutes ?? 25,
             isFromReel: true,
             steps: (steps ?? []).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         )
+        
+        print("✅ API_RECIPE: Recipe conversion completed successfully")
+        return finalRecipe
     }
 }
 
 class RecipeAPIService {
     func importRecipeFromReel(reelURL: String) async throws -> Recipe {
+        print("🚀 IMPORT: Starting recipe import from URL: \(reelURL)")
+        
         let importURL = APIConfig.endpoint("import-recipe")
+        print("🚀 IMPORT: API endpoint: \(importURL)")
         
         var request = URLRequest(url: importURL)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 90
-        request.httpBody = try JSONEncoder().encode(["link": reelURL])
         
+        do {
+            request.httpBody = try JSONEncoder().encode(["link": reelURL])
+            print("🚀 IMPORT: Request body created successfully")
+        } catch {
+            print("❌ IMPORT: Failed to encode request body: \(error)")
+            throw APIError.serverError("Failed to create request: \(error.localizedDescription)")
+        }
+        
+        print("🚀 IMPORT: Sending request to server...")
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+        guard let httpResponse = response as? HTTPURLResponse else {
+            print("❌ IMPORT: Invalid HTTP response")
+            throw APIError.serverError("Invalid server response")
+        }
+        
+        print("🚀 IMPORT: HTTP Status Code: \(httpResponse.statusCode)")
+        
+        if let responseString = String(data: data, encoding: .utf8) {
+            print("🚀 IMPORT: Raw server response:")
+            print(responseString)
+        }
+        
+        guard httpResponse.statusCode == 200 else {
+            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown server error"
+            print("❌ IMPORT: Server error (\(httpResponse.statusCode)): \(errorMessage)")
             throw APIError.serverError("Server connection failed. Please try again.")
         }
         
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
         
-        let apiResponse = try decoder.decode(APIResponse.self, from: data)
-        
-        guard apiResponse.success, let apiRecipe = apiResponse.recipe else {
-            throw APIError.serverError(apiResponse.error ?? "Could not extract a recipe from the link.")
+        do {
+            print("🚀 IMPORT: Attempting to decode API response...")
+            let apiResponse = try decoder.decode(APIResponse.self, from: data)
+            print("🚀 IMPORT: API Response decoded - Success: \(apiResponse.success)")
+            
+            if let error = apiResponse.error {
+                print("🚀 IMPORT: API returned error: \(error)")
+            }
+            
+            guard apiResponse.success, let apiRecipe = apiResponse.recipe else {
+                let errorMsg = apiResponse.error ?? "Could not extract a recipe from the link."
+                print("❌ IMPORT: API failed: \(errorMsg)")
+                throw APIError.serverError(errorMsg)
+            }
+            
+            print("🚀 IMPORT: Converting API recipe to app recipe...")
+            let finalRecipe = apiRecipe.asRecipe()
+            print("✅ IMPORT: Recipe conversion successful - Name: \(finalRecipe.name)")
+            print("✅ IMPORT: Recipe ingredients count: \(finalRecipe.ingredients.count)")
+            
+            return finalRecipe
+            
+        } catch let decodingError {
+            print("❌ IMPORT: JSON decoding failed: \(decodingError)")
+            if let decodingError = decodingError as? DecodingError {
+                switch decodingError {
+                case .dataCorrupted(let context):
+                    print("❌ IMPORT: Data corrupted: \(context)")
+                case .keyNotFound(let key, let context):
+                    print("❌ IMPORT: Key not found: \(key) - \(context)")
+                case .typeMismatch(let type, let context):
+                    print("❌ IMPORT: Type mismatch: \(type) - \(context)")
+                case .valueNotFound(let type, let context):
+                    print("❌ IMPORT: Value not found: \(type) - \(context)")
+                @unknown default:
+                    print("❌ IMPORT: Unknown decoding error")
+                }
+            }
+            throw APIError.serverError("Failed to parse server response: \(decodingError.localizedDescription)")
         }
-        
-        return apiRecipe.asRecipe()
     }
 }
 
@@ -319,14 +449,30 @@ class RecipeStore: ObservableObject {
     
     private func loadData() {
         let decoder = JSONDecoder()
-        if let recipesData = UserDefaults.standard.data(forKey: recipesKey),
-           let decodedRecipes = try? decoder.decode([Recipe].self, from: recipesData) {
-            self.recipes = decodedRecipes
+        
+        // Try to load recipes with new format first
+        if let recipesData = UserDefaults.standard.data(forKey: recipesKey) {
+            do {
+                let decodedRecipes = try decoder.decode([Recipe].self, from: recipesData)
+                self.recipes = decodedRecipes
+            } catch {
+                print("⚠️ Failed to load recipes with new format, clearing old data: \(error)")
+                // Clear old incompatible data and start fresh
+                UserDefaults.standard.removeObject(forKey: recipesKey)
+                self.recipes = []
+            }
         }
         
-        if let collectionsData = UserDefaults.standard.data(forKey: collectionsKey),
-           let decodedCollections = try? decoder.decode([Collection].self, from: collectionsData) {
-            self.collections = decodedCollections
+        // Load collections (should be compatible)
+        if let collectionsData = UserDefaults.standard.data(forKey: collectionsKey) {
+            do {
+                let decodedCollections = try decoder.decode([Collection].self, from: collectionsData)
+                self.collections = decodedCollections
+            } catch {
+                print("⚠️ Failed to load collections, clearing old data: \(error)")
+                UserDefaults.standard.removeObject(forKey: collectionsKey)
+                self.collections = []
+            }
         }
     }
     
