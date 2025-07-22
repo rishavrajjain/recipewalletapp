@@ -142,6 +142,7 @@ private struct APIResponse: Decodable {
     let success: Bool
     let recipe: APIRecipe?
     let error: String?
+    let source: String?
 }
 
 private struct APIIngredient: Decodable {
@@ -274,7 +275,19 @@ class RecipeAPIService {
         guard httpResponse.statusCode == 200 else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown server error"
             print("❌ IMPORT: Server error (\(httpResponse.statusCode)): \(errorMessage)")
-            throw APIError.serverError("Server connection failed. Please try again.")
+            
+            // Handle specific error responses from the new universal importer
+            if httpResponse.statusCode == 500 {
+                // Try to parse the error detail from the response
+                if let errorData = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let detail = errorData["detail"] as? String {
+                    throw APIError.serverError(detail)
+                } else {
+                    throw APIError.serverError("Failed to extract a valid recipe from the provided link. The content may not be a recipe or the website is not supported.")
+                }
+            } else {
+                throw APIError.serverError("Server connection failed. Please try again.")
+            }
         }
         
         let decoder = JSONDecoder()
@@ -284,6 +297,10 @@ class RecipeAPIService {
             print("🚀 IMPORT: Attempting to decode API response...")
             let apiResponse = try decoder.decode(APIResponse.self, from: data)
             print("🚀 IMPORT: API Response decoded - Success: \(apiResponse.success)")
+            
+            if let source = apiResponse.source {
+                print("🚀 IMPORT: Recipe extracted using: \(source)")
+            }
             
             if let error = apiResponse.error {
                 print("🚀 IMPORT: API returned error: \(error)")
@@ -357,6 +374,7 @@ class RecipeStore: ObservableObject {
     
     @Published var isProcessingReel = false
     @Published var importError: (isPresented: Bool, message: String) = (false, "")
+    @Published var loadingRecipeName = ""
     
     private let apiService = RecipeAPIService()
     private var importTask: Task<Recipe, Error>?
@@ -449,6 +467,7 @@ class RecipeStore: ObservableObject {
         pendingCustomName = customName
         isProcessingReel = true
         importError = (false, "")
+        loadingRecipeName = customName.trimmingCharacters(in: .whitespacesAndNewlines)
         
         importTask = Task {
             do {
@@ -478,6 +497,7 @@ class RecipeStore: ObservableObject {
         
         isProcessingReel = false
         pendingCustomName = ""
+        loadingRecipeName = ""
         importTask = nil
     }
     
@@ -485,6 +505,7 @@ class RecipeStore: ObservableObject {
         importError = (true, error.localizedDescription)
         isProcessingReel = false
         pendingCustomName = ""
+        loadingRecipeName = ""
         importTask = nil
     }
     
@@ -493,6 +514,7 @@ class RecipeStore: ObservableObject {
         importTask = nil
         isProcessingReel = false
         pendingCustomName = ""
+        loadingRecipeName = ""
     }
     
     // MARK: Filtering & Data Loading
@@ -637,6 +659,12 @@ struct TabBarView: View {
             }
         }
         .ignoresSafeArea(.keyboard)
+        .onReceive(recipeStore.$isProcessingReel) { isProcessing in
+            if isProcessing {
+                // Switch to Home tab when import starts
+                selectedTab = 0
+            }
+        }
     }
 }
 
@@ -749,59 +777,27 @@ struct ImportTabView: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                // Beautiful Header with Gradient Background
-                VStack(spacing: 24) {
+                // Clean Header Section
+                VStack(spacing: 32) {
                     Spacer()
                     
-                    // Animated Icon with Multiple Elements
-                    ZStack {
-                        // Background Circle with Gradient
-                        Circle()
-                            .fill(
-                                LinearGradient(
-                                    gradient: Gradient(colors: [
-                                        Color(red: 0.2, green: 0.6, blue: 0.2),
-                                        Color(red: 0.15, green: 0.8, blue: 0.4)
-                                    ]),
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                )
-                            )
-                            .frame(width: 120, height: 120)
-                            .shadow(color: Color(red: 0.2, green: 0.6, blue: 0.2).opacity(0.3), radius: 20, x: 0, y: 8)
-                        
-                        // Sparkles Icon
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 48, weight: .medium))
-                            .foregroundColor(.white)
-                    }
-                    
-                    VStack(spacing: 12) {
+                    VStack(spacing: 20) {
                         Text("Import Recipes")
-                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .font(.system(size: 34, weight: .bold, design: .default))
                             .foregroundColor(.primary)
                         
-                        Text("Transform Instagram Reels into your personal recipe collection")
-                            .font(.system(size: 17, weight: .medium))
+                        Text("Paste any recipe link and let AI extract the ingredients and instructions for you")
+                            .font(.system(size: 17))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
-                            .lineLimit(2)
-                            .padding(.horizontal, 32)
+                            .lineLimit(3)
+                            .padding(.horizontal, 24)
                     }
                     
                     Spacer()
                 }
-                .frame(height: 320)
-                .background(
-                    LinearGradient(
-                        gradient: Gradient(colors: [
-                            Color(.systemBackground),
-                            Color(.systemGroupedBackground).opacity(0.5)
-                        ]),
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
+                .frame(height: 200)
+                .background(Color(.systemBackground))
                 
                 // Import Button Section
                 VStack(spacing: 24) {
@@ -809,86 +805,58 @@ struct ImportTabView: View {
                     Button(action: {
                         showingImportSheet = true
                     }) {
-                        HStack(spacing: 20) {
-                            // Instagram Icon with Gradient
-                            ZStack {
-                                Circle()
-                                    .fill(
-                                        LinearGradient(
-                                            gradient: Gradient(colors: [
-                                                Color(red: 0.9, green: 0.3, blue: 0.5),
-                                                Color(red: 0.8, green: 0.4, blue: 0.9),
-                                                Color(red: 0.4, green: 0.6, blue: 0.9)
-                                            ]),
-                                            startPoint: .topLeading,
-                                            endPoint: .bottomTrailing
-                                        )
-                                    )
-                                    .frame(width: 56, height: 56)
-                                
-                                Image(systemName: "camera.fill")
-                                    .font(.system(size: 24, weight: .medium))
-                                    .foregroundColor(.white)
-                            }
+                        HStack(spacing: 16) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 28, weight: .medium))
+                                .foregroundColor(.blue)
                             
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("Import from Instagram")
-                                    .font(.system(size: 20, weight: .semibold))
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Import Recipe")
+                                    .font(.system(size: 18, weight: .semibold))
                                     .foregroundColor(.primary)
                                 
-                                Text("Paste any Instagram Reel link and we'll extract the recipe for you")
-                                    .font(.system(size: 15))
+                                Text("From TikTok, Instagram, websites & more")
+                                    .font(.system(size: 14))
                                     .foregroundColor(.secondary)
-                                    .lineLimit(2)
+                                    .lineLimit(1)
                             }
                             
                             Spacer()
                             
-                            Image(systemName: "arrow.right")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(Color(red: 0.2, green: 0.6, blue: 0.2))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 14, weight: .semibold))
+                                
                         }
-                        .padding(24)
-                        .background(.background)
-                        .cornerRadius(20)
-                        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 20)
-                                .stroke(Color(red: 0.2, green: 0.6, blue: 0.2).opacity(0.1), lineWidth: 1)
-                        )
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 16)
+                        .background(Color(.secondarySystemGroupedBackground))
+                        .cornerRadius(12)
                     }
                     .buttonStyle(.plain)
                     
-                    // Tips Section
+                    // Supported Sources
                     VStack(spacing: 16) {
                         HStack {
-                            Image(systemName: "lightbulb.fill")
-                                .font(.system(size: 16))
-                                .foregroundColor(.orange)
-                            
-                            Text("Quick Tips")
+                            Text("Supported Sources")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.primary)
                             
                             Spacer()
                         }
                         
-                        VStack(spacing: 12) {
-                            TipItem(icon: "link", text: "Copy link from Instagram Reels")
-                            TipItem(icon: "clock", text: "Processing takes 30-90 seconds")
-                            TipItem(icon: "checkmark.circle", text: "Works best with the recipe in caption")
+                        LazyVGrid(columns: [
+                            GridItem(.flexible()),
+                            GridItem(.flexible())
+                        ], spacing: 12) {
+                            SourceCard(icon: "video.fill", title: "TikTok", subtitle: "Videos & recipes")
+                            SourceCard(icon: "camera.fill", title: "Instagram", subtitle: "Reels & posts")
+                            SourceCard(icon: "globe", title: "Websites", subtitle: "Recipe blogs")
+                            SourceCard(icon: "play.fill", title: "YouTube", subtitle: "Cooking videos")
                         }
                     }
-                    .padding(20)
-                    .background(Color.orange.opacity(0.05))
-                    .cornerRadius(16)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 16)
-                            .stroke(Color.orange.opacity(0.2), lineWidth: 1)
-                    )
                 }
-                .padding(.horizontal, 28)
-                .padding(.top, 32)
+                .padding(.horizontal, 24)
+                .padding(.top, 24)
                 
                 Spacer()
             }
@@ -918,6 +886,36 @@ struct TipItem: View {
             
             Spacer()
         }
+    }
+}
+
+struct SourceCard: View {
+    let icon: String
+    let title: String
+    let subtitle: String
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(.blue)
+                .frame(width: 32, height: 32)
+            
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
+        .padding(.horizontal, 12)
+        .background(Color(.secondarySystemGroupedBackground))
+        .cornerRadius(10)
     }
 }
 
@@ -951,7 +949,7 @@ struct HomeView: View {
                     .background(Color(.systemBackground))
                 
                 ScrollView {
-                    // ... your existing collections and recipe grid code remains the same ...
+                    // Collections and recipe grid
                     VStack(spacing: 0) {
                         Button(action: {
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -980,9 +978,19 @@ struct HomeView: View {
                     }
                     
                     LazyVGrid(columns: columns, spacing: 16) {
+                        // Loading Recipe Card (first item in grid when importing)
+                        if recipeStore.isProcessingReel {
+                            LoadingRecipeCard(recipeName: recipeStore.loadingRecipeName)
+                                .transition(.asymmetric(
+                                    insertion: .scale(scale: 0.8).combined(with: .opacity),
+                                    removal: .scale(scale: 0.8).combined(with: .opacity)
+                                ))
+                        }
+                        
                         ForEach(recipeStore.filteredRecipes) { recipe in
                             NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
                                 RecipeCard(recipe: recipe)
+                                    .contentShape(Rectangle())
                                     .contextMenu {
                                         Button { recipeToManage = recipe } label: {
                                             Label("Add to Collection", systemImage: "folder.badge.plus")
@@ -1021,22 +1029,8 @@ struct HomeView: View {
                 EmptyStateView(hasRecipes: false, searchText: "")
             }
         }
-        .overlay(processingOverlay)
         .animation(.default, value: recipeStore.filteredRecipes)
-    }
-    
-    @ViewBuilder
-    private var processingOverlay: some View {
-        if recipeStore.isProcessingReel {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-                .transition(.opacity)
-            
-            ProcessingIndicator(onCancel: {
-                recipeStore.cancelImport()
-            })
-            .transition(.scale.combined(with: .opacity))
-        }
+        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: recipeStore.isProcessingReel)
     }
 }
 
@@ -1096,6 +1090,7 @@ struct CollectionDetailView: View {
                 ForEach(recipes) { recipe in
                     NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
                         RecipeCard(recipe: recipe)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 }
@@ -1479,7 +1474,7 @@ struct ImportReelSheet: View {
                             .clipShape(Circle())
                         
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(currentStep == .linkInput ? "Add Instagram Link" : "Name Your Recipe")
+                            Text(currentStep == .linkInput ? "Add Link" : "Name Your Recipe")
                                 .font(.title3).fontWeight(.semibold)
                             Text(currentStep == .linkInput ? "" : "Optional: Give it a custom name")
                                 .font(.caption).foregroundColor(.secondary)
@@ -1533,10 +1528,16 @@ struct ImportReelSheet: View {
     
     private var isLinkValid: Bool {
         let trimmed = reelLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Accept any URL that looks like a valid web link
         return !trimmed.isEmpty && (
-            trimmed.contains("instagram.com/reel/") ||
-            trimmed.contains("instagram.com/p/") ||
-            trimmed.contains("instagram.com/reels/")
+            trimmed.hasPrefix("http://") ||
+            trimmed.hasPrefix("https://") ||
+            trimmed.contains(".com") ||
+            trimmed.contains(".org") ||
+            trimmed.contains(".net") ||
+            trimmed.contains("tiktok.com") ||
+            trimmed.contains("instagram.com") ||
+            trimmed.contains("youtube.com")
         )
     }
     
@@ -1591,6 +1592,81 @@ struct RecipeCard: View {
         .background(.background)
         .cornerRadius(16)
         .shadow(color: .black.opacity(0.1), radius: 5)
+    }
+}
+
+struct LoadingRecipeCard: View {
+    let recipeName: String
+    @State private var isAnimating = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Loading image placeholder with shimmer effect
+            ZStack {
+                Rectangle()
+                    .fill(Color.gray.opacity(0.1))
+                    .frame(height: 120)
+                
+                VStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.blue)
+                    
+                    Text("Loading...")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .overlay(
+                // Shimmer effect
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            gradient: Gradient(colors: [
+                                Color.clear,
+                                Color.white.opacity(0.3),
+                                Color.clear
+                            ]),
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .offset(x: isAnimating ? 300 : -300)
+                    .animation(.easeInOut(duration: 1.5).repeatForever(autoreverses: false), value: isAnimating)
+            )
+            .clipped()
+            
+            VStack(alignment: .leading, spacing: 6) {
+                Text(recipeName.isEmpty ? "Extracting Recipe..." : recipeName)
+                    .font(.headline)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(height: 44, alignment: .top)
+                    .minimumScaleFactor(0.8)
+                    .foregroundColor(recipeName.isEmpty ? .secondary : .primary)
+                
+                HStack(spacing: 4) {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .tint(.blue)
+                    
+                    Text("Extracting recipe...")
+                        .font(.caption)
+                        .foregroundColor(.blue)
+                }
+            }
+            .padding(10)
+        }
+        .background(.background)
+        .cornerRadius(16)
+        .shadow(color: .black.opacity(0.1), radius: 5)
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+        )
+        .onAppear {
+            isAnimating = true
+        }
     }
 }
 
@@ -1755,8 +1831,8 @@ struct ProcessingIndicator: View {
         VStack(spacing: 20) {
             ProgressView().scaleEffect(1.5).tint(.pink)
             VStack(spacing: 8) {
-                Text("Extracting Recipe from Reel...").font(.headline).fontWeight(.semibold)
-                Text("This can take up to 90 seconds.\nPlease wait.").font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
+                Text("Extracting Recipe...").font(.headline).fontWeight(.semibold)
+                Text("AI is analyzing your link and extracting the recipe.\nThis can take up to 90 seconds.").font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
             }
             Button("Cancel", action: onCancel).buttonStyle(.bordered).controlSize(.large).tint(.secondary)
         }
@@ -1839,14 +1915,14 @@ struct LinkInputContent: View {
             // URL Input Section
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Text("Instagram URL")
+                    Text("Recipe URL")
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
                     Spacer()
                 }
                 
-                TextField("Paste Instagram reel link here", text: $reelLink)
+                TextField("Paste any recipe link (TikTok, websites, Instagram...)", text: $reelLink)
                     .focused($isLinkFieldFocused)
                     .textFieldStyle(.roundedBorder)
                     .keyboardType(.URL)
@@ -1874,13 +1950,13 @@ struct LinkInputContent: View {
                 // Tips List
                 VStack(alignment: .leading, spacing: 12) {
                     TipRow(icon: "square.and.arrow.up",
-                           text: "Share → Copy Link from Instagram")
+                           text: "Copy link from any recipe source")
                     
-                    TipRow(icon: "text.alignleft",
-                           text: "Works best with the recipe in caption")
+                    TipRow(icon: "globe",
+                           text: "Supports TikTok, websites & social media")
                     
-                    TipRow(icon: "clock",
-                           text: "Processing takes 30-90 seconds")
+                    TipRow(icon: "wand.and.stars",
+                           text: "AI extracts ingredients & instructions")
                 }
             }
             .padding(20)
