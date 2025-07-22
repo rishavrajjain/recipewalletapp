@@ -1,5 +1,4 @@
 import SwiftUI
-import PhotosUI
 import UniformTypeIdentifiers
 
 // MARK: - Document Picker for PDFs
@@ -35,13 +34,15 @@ struct DocumentPicker: UIViewControllerRepresentable {
     }
 }
 
-// MARK: - User Info View (kitchen photos + blood test PDF upload)
+// MARK: - User Info View (user profile + blood test PDF upload)
 struct UserInfoView: View {
     @Environment(\.dismiss) private var dismiss
     
-    // Kitchen photos
-    @State private var kitchenPickerItems: [PhotosPickerItem] = []
-    @State private var kitchenImages: [UIImage] = []
+    // User profile fields
+    @State private var userName: String = ""
+    @State private var userAge: String = ""
+    @State private var userWeight: String = ""
+    @State private var foodPreference: FoodPreference = .omnivore
     
     // Blood test PDF
     @State private var isDocumentPickerPresented = false
@@ -52,58 +53,137 @@ struct UserInfoView: View {
     @State private var isUploading = false
     @State private var errorMessage: String?
     
+    enum FoodPreference: String, CaseIterable {
+        case omnivore = "Omnivore"
+        case vegetarian = "Vegetarian"
+        case vegan = "Vegan"
+        case pescatarian = "Pescatarian"
+        case keto = "Keto"
+        case paleo = "Paleo"
+        case glutenFree = "Gluten-Free"
+        
+        var icon: String {
+            switch self {
+            case .omnivore: return "fork.knife"
+            case .vegetarian: return "leaf.fill"
+            case .vegan: return "carrot.fill"
+            case .pescatarian: return "fish.fill"
+            case .keto: return "flame.fill"
+            case .paleo: return "mountain.2.fill"
+            case .glutenFree: return "checkmark.shield.fill"
+            }
+        }
+    }
+    
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 32) {
-                    // Kitchen Photos Section
-                    VStack(spacing: 16) {
+                    // User Profile Section
+                    VStack(spacing: 20) {
                         HStack {
-                            Image(systemName: "camera.viewfinder")
-                                .foregroundColor(.accentColor)
-                            Text("Kitchen Photos")
+                            Image(systemName: "person.circle.fill")
+                                .foregroundColor(.blue)
+                            Text("Personal Information")
                                 .font(.headline)
                             Spacer()
                         }
                         
-                        if kitchenImages.isEmpty {
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.gray.opacity(0.1))
-                                .frame(height: 120)
-                                .overlay(
-                                    VStack {
-                                        Image(systemName: "photo.badge.plus")
-                                            .font(.system(size: 40))
-                                            .foregroundColor(.gray)
-                                        Text("No kitchen photos selected")
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
-                                    }
-                                )
-                        } else {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(kitchenImages.indices, id: \.self) { idx in
-                                        Image(uiImage: kitchenImages[idx])
-                                            .resizable()
-                                            .aspectRatio(contentMode: .fill)
-                                            .frame(width: 110, height: 110)
-                                            .clipped()
-                                            .cornerRadius(10)
-                                            .shadow(radius: 2)
-                                    }
+                        VStack(spacing: 16) {
+                            // Name Field
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "person.fill")
+                                        .foregroundColor(.blue)
+                                        .frame(width: 20)
+                                    Text("Full Name")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
                                 }
-                                .padding(.horizontal, 4)
+                                TextField("Enter your name", text: $userName)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                            
+                            // Age and Weight Row
+                            HStack(spacing: 16) {
+                                // Age Field
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Image(systemName: "calendar")
+                                            .foregroundColor(.orange)
+                                            .frame(width: 20)
+                                        Text("Age")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    TextField("25", text: $userAge)
+                                        .textFieldStyle(.roundedBorder)
+                                        .keyboardType(.numberPad)
+                                }
+                                
+                                // Weight Field
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Image(systemName: "scalemass")
+                                            .foregroundColor(.green)
+                                            .frame(width: 20)
+                                        Text("Weight (kg)")
+                                            .font(.subheadline)
+                                            .fontWeight(.medium)
+                                    }
+                                    TextField("70", text: $userWeight)
+                                        .textFieldStyle(.roundedBorder)
+                                        .keyboardType(.decimalPad)
+                                }
+                            }
+                            
+                            // Food Preference Field
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Image(systemName: "fork.knife")
+                                        .foregroundColor(.purple)
+                                        .frame(width: 20)
+                                    Text("Food Preference")
+                                        .font(.subheadline)
+                                        .fontWeight(.medium)
+                                }
+                                
+                                Menu {
+                                    ForEach(FoodPreference.allCases, id: \.self) { preference in
+                                        Button(action: {
+                                            foodPreference = preference
+                                        }) {
+                                            HStack {
+                                                Image(systemName: preference.icon)
+                                                Text(preference.rawValue)
+                                                if foodPreference == preference {
+                                                    Spacer()
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: foodPreference.icon)
+                                            .foregroundColor(.purple)
+                                        Text(foodPreference.rawValue)
+                                        Spacer()
+                                        Image(systemName: "chevron.down")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding()
+                                    .background(Color(.secondarySystemBackground))
+                                    .cornerRadius(8)
+                                }
+                                .buttonStyle(.plain)
                             }
                         }
-                        
-                        PhotosPicker(selection: $kitchenPickerItems,
-                                     maxSelectionCount: 6,
-                                     matching: .images) {
-                            Label("Select Kitchen Photos", systemImage: "photo.on.rectangle")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
+                        .padding(20)
+                        .background(Color(.systemBackground))
+                        .cornerRadius(16)
+                        .shadow(color: .black.opacity(0.05), radius: 8, x: 0, y: 4)
                     }
                     
                     // Blood Test Report Section
@@ -175,7 +255,7 @@ struct UserInfoView: View {
                             }
                             .buttonStyle(.borderedProminent)
                             .frame(maxWidth: .infinity)
-                            .disabled(kitchenImages.isEmpty && selectedPDFURL == nil)
+                            .disabled(userName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         }
                         
                         if let msg = errorMessage {
@@ -195,28 +275,30 @@ struct UserInfoView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .onChange(of: kitchenPickerItems) { _ in
-                Task { await loadSelectedImages() }
-            }
+
             .sheet(isPresented: $isDocumentPickerPresented) {
                 DocumentPicker(selectedURL: $selectedPDFURL, selectedName: $selectedPDFName)
+            }
+            .onAppear {
+                loadExistingUserData()
             }
         }
     }
     
     // MARK: - Helpers
-    /// Convert PhotosPicker items into UIImages
-    private func loadSelectedImages() async {
-        kitchenImages.removeAll()
-        for item in kitchenPickerItems {
-            if let data = try? await item.loadTransferable(type: Data.self),
-               let img = UIImage(data: data) {
-                kitchenImages.append(img)
-            }
+    
+    private func loadExistingUserData() {
+        userName = UserDefaults.standard.string(forKey: "userName") ?? ""
+        userAge = UserDefaults.standard.string(forKey: "userAge") ?? ""
+        userWeight = UserDefaults.standard.string(forKey: "userWeight") ?? ""
+        
+        if let savedPreference = UserDefaults.standard.string(forKey: "foodPreference"),
+           let preference = FoodPreference(rawValue: savedPreference) {
+            foodPreference = preference
         }
     }
     
-    /// Upload kitchen photos and blood test PDF
+    /// Upload user profile and blood test PDF
     private func uploadUserInfo() async {
         isUploading = true
         errorMessage = nil
@@ -225,7 +307,7 @@ struct UserInfoView: View {
         let boundary = UUID().uuidString
         
         do {
-            // Build multipart request with both photos and PDF
+            // Build multipart request with user profile and PDF
             guard let request = try buildUserInfoRequest(boundary: boundary) else {
                 errorMessage = "Failed to build upload request"
                 return
@@ -239,10 +321,12 @@ struct UserInfoView: View {
             if httpRes.statusCode == 200 {
                 // Parse response and save user info
                 if let json = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
-                    // Save kitchen ID if provided
-                    if let kitchenId = json["kitchen_id"] as? String {
-                        UserDefaults.standard.set(kitchenId, forKey: "kitchenID")
-                    }
+                    // Save user profile info locally
+                    UserDefaults.standard.set(userName, forKey: "userName")
+                    UserDefaults.standard.set(userAge, forKey: "userAge")
+                    UserDefaults.standard.set(userWeight, forKey: "userWeight")
+                    UserDefaults.standard.set(foodPreference.rawValue, forKey: "foodPreference")
+                    
                     // Save blood test info if provided
                     if let bloodTestId = json["blood_test_id"] as? String {
                         UserDefaults.standard.set(bloodTestId, forKey: "bloodTestID")
@@ -261,7 +345,7 @@ struct UserInfoView: View {
         }
     }
     
-    /// Build multipart/form-data request with kitchen photos and PDF
+    /// Build multipart/form-data request with user profile and PDF
     private func buildUserInfoRequest(boundary: String) throws -> URLRequest? {
         let url = APIConfig.endpoint("upload-user-info")
         
@@ -271,13 +355,19 @@ struct UserInfoView: View {
         
         var body = Data()
         
-        // Add kitchen photos
-        for (index, image) in kitchenImages.enumerated() {
-            if let jpeg = image.jpegData(compressionQuality: 0.8) {
+        // Add user profile fields
+        let profileFields = [
+            ("name", userName),
+            ("age", userAge),
+            ("weight", userWeight),
+            ("food_preference", foodPreference.rawValue)
+        ]
+        
+        for (fieldName, fieldValue) in profileFields {
+            if !fieldValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 body.append("--\(boundary)\r\n".data(using: .utf8)!)
-                body.append("Content-Disposition: form-data; name=\"kitchen_photos\"; filename=\"kitchen_\(index + 1).jpg\"\r\n".data(using: .utf8)!)
-                body.append("Content-Type: image/jpeg\r\n\r\n".data(using: .utf8)!)
-                body.append(jpeg)
+                body.append("Content-Disposition: form-data; name=\"\(fieldName)\"\r\n\r\n".data(using: .utf8)!)
+                body.append(fieldValue.data(using: .utf8)!)
                 body.append("\r\n".data(using: .utf8)!)
             }
         }

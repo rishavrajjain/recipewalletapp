@@ -115,6 +115,25 @@ struct Collection: Identifiable, Codable, Hashable {
     }
 }
 
+struct ShoppingListItem: Identifiable, Codable, Hashable {
+    let id = UUID()
+    let name: String
+    let fromRecipe: String?
+    let addedAt: Date
+    
+    enum CodingKeys: String, CodingKey {
+        case name
+        case fromRecipe
+        case addedAt
+    }
+    
+    init(name: String, fromRecipe: String? = nil) {
+        self.name = name
+        self.fromRecipe = fromRecipe
+        self.addedAt = Date()
+    }
+}
+
 // ========================================================================
 // MARK: - API Service Layer
 // ========================================================================
@@ -188,10 +207,24 @@ private struct APIRecipe: Decodable {
         let convertedIngredients = (ingredients ?? []).map { $0.asIngredient() }
         print("🍳 API_RECIPE: Converted ingredients count: \(convertedIngredients.count)")
         
+        // For Instagram Reels, prioritize thumbnail as it's more representative of video content
+        let finalImageUrl: String = {
+            if let thumbnail = thumbnailUrl, !thumbnail.trimmingCharacters(in: .whitespaces).isEmpty {
+                print("🍳 API_RECIPE: Using thumbnail URL as primary image: \(thumbnail)")
+                return thumbnail
+            } else if let image = imageUrl, !image.trimmingCharacters(in: .whitespaces).isEmpty {
+                print("🍳 API_RECIPE: Using image URL as fallback: \(image)")
+                return image
+            } else {
+                print("🍳 API_RECIPE: No image or thumbnail available, using empty string")
+                return ""
+            }
+        }()
+        
         let finalRecipe = Recipe(
             name: title,
             description: description ?? "Recipe from Reel",
-            imageUrl: imageUrl ?? thumbnailUrl ?? "",
+            imageUrl: finalImageUrl,
             ingredients: convertedIngredients,
             cookTime: cookTimeMinutes ?? totalTimeMinutes ?? 25,
             isFromReel: true,
@@ -313,6 +346,9 @@ class RecipeStore: ObservableObject {
     @Published var collections: [Collection] = [] {
         didSet { saveCollections() }
     }
+    @Published var shoppingList: [ShoppingListItem] = [] {
+        didSet { saveShoppingList() }
+    }
     
     @Published var filteredRecipes: [Recipe] = []
     @Published var searchText = "" {
@@ -328,6 +364,7 @@ class RecipeStore: ObservableObject {
     
     private let recipesKey = "userRecipes"
     private let collectionsKey = "userCollections"
+    private let shoppingListKey = "userShoppingList"
     
     init() {
         loadData()
@@ -379,6 +416,31 @@ class RecipeStore: ObservableObject {
     
     func isRecipe(_ recipe: Recipe, in collection: Collection) -> Bool {
         collection.recipeIDs.contains(recipe.id)
+    }
+    
+    // MARK: Shopping List Management
+    
+    func addIngredientsToShoppingList(_ ingredients: [Ingredient]) {
+        var newItems: [ShoppingListItem] = []
+        
+        for ingredient in ingredients {
+            // Check if ingredient is already in shopping list
+            if !shoppingList.contains(where: { $0.name.lowercased() == ingredient.name.lowercased() }) {
+                let item = ShoppingListItem(name: ingredient.name)
+                newItems.append(item)
+            }
+        }
+        
+        // Insert new items at the beginning of the list (most recent first)
+        shoppingList.insert(contentsOf: newItems, at: 0)
+    }
+    
+    func removeFromShoppingList(_ item: ShoppingListItem) {
+        shoppingList.removeAll { $0.id == item.id }
+    }
+    
+    func clearShoppingList() {
+        shoppingList.removeAll()
     }
     
     // MARK: Recipe Import Flow
@@ -474,6 +536,18 @@ class RecipeStore: ObservableObject {
                 self.collections = []
             }
         }
+        
+        // Load shopping list
+        if let shoppingListData = UserDefaults.standard.data(forKey: shoppingListKey) {
+            do {
+                let decodedShoppingList = try decoder.decode([ShoppingListItem].self, from: shoppingListData)
+                self.shoppingList = decodedShoppingList
+            } catch {
+                print("⚠️ Failed to load shopping list, clearing old data: \(error)")
+                UserDefaults.standard.removeObject(forKey: shoppingListKey)
+                self.shoppingList = []
+            }
+        }
     }
     
     private func saveRecipes() {
@@ -487,6 +561,13 @@ class RecipeStore: ObservableObject {
         let encoder = JSONEncoder()
         if let encoded = try? encoder.encode(collections) {
             UserDefaults.standard.set(encoded, forKey: collectionsKey)
+        }
+    }
+    
+    private func saveShoppingList() {
+        let encoder = JSONEncoder()
+        if let encoded = try? encoder.encode(shoppingList) {
+            UserDefaults.standard.set(encoded, forKey: shoppingListKey)
         }
     }
     
@@ -521,26 +602,339 @@ class RecipeStore: ObservableObject {
 // MARK: - Main Views
 // ========================================================================
 
+struct TabBarView: View {
+    @State private var selectedTab = 0
+    @EnvironmentObject var recipeStore: RecipeStore
+    
+    var body: some View {
+        ZStack {
+            // Tab Content
+            Group {
+                switch selectedTab {
+                case 0:
+                    NavigationView {
+                        HomeView()
+                    }
+                case 1:
+                    ImportTabView()
+                case 2:
+                    ShoppingListView()
+                case 3:
+                    NavigationView {
+                        UserInfoView()
+                    }
+                default:
+                    NavigationView {
+                        HomeView()
+                    }
+                }
+            }
+            
+            // Custom Tab Bar
+            VStack {
+                Spacer()
+                CustomTabBar(selectedTab: $selectedTab)
+            }
+        }
+        .ignoresSafeArea(.keyboard)
+    }
+}
+
+struct CustomTabBar: View {
+    @Binding var selectedTab: Int
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            // Home Tab
+            TabBarButton(
+                icon: "house.fill",
+                title: "Home",
+                isSelected: selectedTab == 0,
+                action: { selectedTab = 0 }
+            )
+            
+            // Import Tab (Prominent)
+            TabBarButton(
+                icon: "sparkles",
+                title: "Import",
+                isSelected: selectedTab == 1,
+                isProminent: true,
+                action: { selectedTab = 1 }
+            )
+            
+            // Shopping List Tab
+            TabBarButton(
+                icon: "list.clipboard.fill",
+                title: "Shopping",
+                isSelected: selectedTab == 2,
+                action: { selectedTab = 2 }
+            )
+            
+            // Profile Tab
+            TabBarButton(
+                icon: "person.circle.fill",
+                title: "Profile",
+                isSelected: selectedTab == 3,
+                action: { selectedTab = 3 }
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            .ultraThinMaterial,
+            in: RoundedRectangle(cornerRadius: 20)
+        )
+        .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 3)
+        .padding(.horizontal, 24)
+        .padding(.bottom, 8)
+    }
+}
+
+struct TabBarButton: View {
+    let icon: String
+    let title: String
+    let isSelected: Bool
+    let isProminent: Bool
+    let action: () -> Void
+    
+    init(icon: String, title: String, isSelected: Bool, isProminent: Bool = false, action: @escaping () -> Void) {
+        self.icon = icon
+        self.title = title
+        self.isSelected = isSelected
+        self.isProminent = isProminent
+        self.action = action
+    }
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: icon)
+                    .font(.system(size: isProminent ? 22 : 18, weight: .medium))
+                    .foregroundColor(isSelected ? (isProminent ? .white : Color(red: 0.2, green: 0.6, blue: 0.2)) : .gray)
+                    .frame(width: isProminent ? 38 : 28, height: isProminent ? 38 : 28)
+                    .background {
+                        if isProminent && isSelected {
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color(red: 0.2, green: 0.6, blue: 0.2), Color(red: 0.15, green: 0.5, blue: 0.15)]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        } else {
+                            Color.clear
+                        }
+                    }
+                    .clipShape(Circle())
+                    .shadow(
+                        color: isProminent && isSelected ? Color(red: 0.2, green: 0.6, blue: 0.2).opacity(0.3) : .clear,
+                        radius: 3, x: 0, y: 1
+                    )
+                
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(isSelected ? Color(red: 0.2, green: 0.6, blue: 0.2) : .gray)
+                    .lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Tab Views
+
+struct ImportTabView: View {
+    @EnvironmentObject var recipeStore: RecipeStore
+    @State private var showingImportSheet = false
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Beautiful Header with Gradient Background
+                VStack(spacing: 24) {
+                    Spacer()
+                    
+                    // Animated Icon with Multiple Elements
+                    ZStack {
+                        // Background Circle with Gradient
+                        Circle()
+                            .fill(
+                                LinearGradient(
+                                    gradient: Gradient(colors: [
+                                        Color(red: 0.2, green: 0.6, blue: 0.2),
+                                        Color(red: 0.15, green: 0.8, blue: 0.4)
+                                    ]),
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 120, height: 120)
+                            .shadow(color: Color(red: 0.2, green: 0.6, blue: 0.2).opacity(0.3), radius: 20, x: 0, y: 8)
+                        
+                        // Sparkles Icon
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 48, weight: .medium))
+                            .foregroundColor(.white)
+                    }
+                    
+                    VStack(spacing: 12) {
+                        Text("Import Recipes")
+                            .font(.system(size: 32, weight: .bold, design: .rounded))
+                            .foregroundColor(.primary)
+                        
+                        Text("Transform Instagram Reels into your personal recipe collection")
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+                            .padding(.horizontal, 32)
+                    }
+                    
+                    Spacer()
+                }
+                .frame(height: 320)
+                .background(
+                    LinearGradient(
+                        gradient: Gradient(colors: [
+                            Color(.systemBackground),
+                            Color(.systemGroupedBackground).opacity(0.5)
+                        ]),
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                
+                // Import Button Section
+                VStack(spacing: 24) {
+                    // Main Import Button
+                    Button(action: {
+                        showingImportSheet = true
+                    }) {
+                        HStack(spacing: 20) {
+                            // Instagram Icon with Gradient
+                            ZStack {
+                                Circle()
+                                    .fill(
+                                        LinearGradient(
+                                            gradient: Gradient(colors: [
+                                                Color(red: 0.9, green: 0.3, blue: 0.5),
+                                                Color(red: 0.8, green: 0.4, blue: 0.9),
+                                                Color(red: 0.4, green: 0.6, blue: 0.9)
+                                            ]),
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                                    .frame(width: 56, height: 56)
+                                
+                                Image(systemName: "camera.fill")
+                                    .font(.system(size: 24, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Import from Instagram")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(.primary)
+                                
+                                Text("Paste any Instagram Reel link and we'll extract the recipe for you")
+                                    .font(.system(size: 15))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(2)
+                            }
+                            
+                            Spacer()
+                            
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(Color(red: 0.2, green: 0.6, blue: 0.2))
+                        }
+                        .padding(24)
+                        .background(.background)
+                        .cornerRadius(20)
+                        .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 20)
+                                .stroke(Color(red: 0.2, green: 0.6, blue: 0.2).opacity(0.1), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    
+                    // Tips Section
+                    VStack(spacing: 16) {
+                        HStack {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 16))
+                                .foregroundColor(.orange)
+                            
+                            Text("Quick Tips")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.primary)
+                            
+                            Spacer()
+                        }
+                        
+                        VStack(spacing: 12) {
+                            TipItem(icon: "link", text: "Copy link from Instagram Reels")
+                            TipItem(icon: "clock", text: "Processing takes 30-90 seconds")
+                            TipItem(icon: "checkmark.circle", text: "Works best with the recipe in caption")
+                        }
+                    }
+                    .padding(20)
+                    .background(Color.orange.opacity(0.05))
+                    .cornerRadius(16)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                    )
+                }
+                .padding(.horizontal, 28)
+                .padding(.top, 32)
+                
+                Spacer()
+            }
+            .navigationTitle("")
+            .background(Color(.systemGroupedBackground))
+        }
+        .sheet(isPresented: $showingImportSheet) {
+            ImportReelSheet()
+        }
+    }
+}
+
+struct TipItem: View {
+    let icon: String
+    let text: String
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.orange)
+                .frame(width: 20, alignment: .leading)
+            
+            Text(text)
+                .font(.system(size: 14))
+                .foregroundColor(.secondary)
+            
+            Spacer()
+        }
+    }
+}
+
+
+
 struct ContentView: View {
     @StateObject private var recipeStore = RecipeStore()
     
     var body: some View {
-        NavigationView {
-            HomeView()
-        }
-        .environmentObject(recipeStore)
+        TabBarView()
+            .environmentObject(recipeStore)
     }
 }
 
 // MARK: - Home View
 struct HomeView: View {
     @EnvironmentObject var recipeStore: RecipeStore
-    
-    // --- STATE VARIABLES FOR NEW FLOW ---
-    @State private var showingImportOptions = false   // For the new pop-up menu
-    @State private var showingImportSheet = false     // To show the original video import
-    @State private var showingScanKitchenPage = false // To show the new scan page
-    // --- END ---
     
     @State private var showingCreateCollectionSheet = false
     @State private var recipeToManage: Recipe?
@@ -610,28 +1004,8 @@ struct HomeView: View {
                     }
                 }
             }
-            .navigationTitle("My Recipes")
+            .navigationTitle("Recipe Wallet")
             .background(Color(.systemGroupedBackground))
-            .toolbar {
-                // --- MODIFIED TOOLBAR ITEM ---
-                // This button now triggers the action sheet instead of going directly to the import sheet.
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingImportOptions = true
-                    } label: {
-                        Label {
-                            Text("Import")
-                        } icon: {
-                            Image(systemName: "line.3.horizontal")
-                                .rotationEffect(.degrees(90))
-                        }
-                    }
-                }
-                // --- END MODIFICATION ---
-            }
-            // --- ALL SHEET MODIFIERS ---
-            .sheet(isPresented: $showingImportSheet) { ImportReelSheet() }
-            .sheet(isPresented: $showingScanKitchenPage) { UserInfoView() } // For the new page
             .sheet(isPresented: $showingCreateCollectionSheet) { NewCollectionSheet() }
             .sheet(item: $recipeToManage) { recipe in
                 AddToCollectionSheet(recipe: recipe)
@@ -649,25 +1023,6 @@ struct HomeView: View {
         }
         .overlay(processingOverlay)
         .animation(.default, value: recipeStore.filteredRecipes)
-        .onReceive(NotificationCenter.default.publisher(for: .showUserProfile)) { _ in
-            showingScanKitchenPage = true
-        }
-        // --- ACTION SHEET IMPLEMENTATION ---
-        // This presents the user with the two choices.
-        .actionSheet(isPresented: $showingImportOptions) {
-            ActionSheet(title: Text("More"),
-                        message: Text("Choose an option"),
-                        buttons: [
-                            .default(Text("User Profile")) {
-                                showingScanKitchenPage = true
-                            },
-                            .default(Text("Import Video")) {
-                                showingImportSheet = true
-                            },
-                            .cancel()
-                        ])
-        }
-        // --- END ---
     }
     
     @ViewBuilder
@@ -930,6 +1285,162 @@ struct AddRecipesToCollectionSheet: View {
     }
 }
 
+struct ShareCollectionSheet: View {
+    @EnvironmentObject var store: RecipeStore
+    @Environment(\.dismiss) private var dismiss
+    let collection: Collection
+    
+    @State private var shareText = ""
+    @State private var showingActivityView = false
+    
+    private var recipesInCollection: [Recipe] {
+        store.recipes(in: collection)
+    }
+    
+    private var shareContent: String {
+        var content = "🍽️ Check out my '\(collection.name)' collection from Recipe Wallet!\n\n"
+        
+        if recipesInCollection.isEmpty {
+            content += "This collection is ready for new recipes! 📝"
+        } else {
+            content += "📋 \(recipesInCollection.count) delicious \(recipesInCollection.count == 1 ? "recipe" : "recipes"):\n\n"
+            
+            for (index, recipe) in recipesInCollection.prefix(5).enumerated() {
+                content += "\(index + 1). \(recipe.name) (\(recipe.cookTime) min)\n"
+            }
+            
+            if recipesInCollection.count > 5 {
+                content += "... and \(recipesInCollection.count - 5) more!\n"
+            }
+        }
+        
+        content += "\n✨ Get Recipe Wallet to organize your recipes!"
+        return content
+    }
+    
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 24) {
+                // Header
+                VStack(spacing: 12) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "square.and.arrow.up.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(.blue)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Share Collection")
+                                .font(.title2)
+                                .fontWeight(.bold)
+                            Text("Spread the recipe love! 💙")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal)
+                
+                // Collection Preview
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text("Preview")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Spacer()
+                    }
+                    
+                    ScrollView {
+                        Text(shareContent)
+                            .font(.body)
+                            .padding()
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color(.secondarySystemBackground))
+                            .cornerRadius(12)
+                    }
+                    .frame(maxHeight: 200)
+                }
+                .padding(.horizontal)
+                
+                // Share Options
+                VStack(spacing: 16) {
+                    Button(action: {
+                        showingActivityView = true
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.title3)
+                            Text("Share Collection")
+                                .font(.headline)
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .cornerRadius(12)
+                        .shadow(color: .blue.opacity(0.3), radius: 4, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    
+                    Button(action: {
+                        UIPasteboard.general.string = shareContent
+                        // Show a brief success feedback
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                        impactFeedback.impactOccurred()
+                    }) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "doc.on.clipboard")
+                                .font(.title3)
+                            Text("Copy to Clipboard")
+                                .font(.headline)
+                        }
+                        .foregroundColor(.blue)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 50)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(12)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal)
+                
+                Spacer()
+            }
+            .navigationTitle("")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .sheet(isPresented: $showingActivityView) {
+            ActivityViewController(activityItems: [shareContent])
+        }
+    }
+}
+
+struct ActivityViewController: UIViewControllerRepresentable {
+    let activityItems: [Any]
+    
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        let controller = UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
+        return controller
+    }
+    
+    func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
+}
+
 struct ImportReelSheet: View {
     @EnvironmentObject var recipeStore: RecipeStore
     @Environment(\.dismiss) private var dismiss
@@ -970,7 +1481,7 @@ struct ImportReelSheet: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(currentStep == .linkInput ? "Add Instagram Link" : "Name Your Recipe")
                                 .font(.title3).fontWeight(.semibold)
-                            Text(currentStep == .linkInput ? "Paste your Instagram Reel URL" : "Optional: Give it a custom name")
+                            Text(currentStep == .linkInput ? "" : "Optional: Give it a custom name")
                                 .font(.caption).foregroundColor(.secondary)
                         }
                         Spacer()
@@ -1089,6 +1600,7 @@ struct CollectionCard: View {
     
     @EnvironmentObject var store: RecipeStore
     @State private var showingDeleteAlert = false
+    @State private var showingShareSheet = false
     
     private var recipeCount: Int {
         store.recipes(in: collection).count
@@ -1107,16 +1619,31 @@ struct CollectionCard: View {
                 
                 Spacer()
                 
-                // Recipe count at bottom
-                Label("\(recipeCount) \(recipeCount == 1 ? "recipe" : "recipes")", systemImage: "tray.fill")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Bottom row with recipe count and share button
+                HStack {
+                    Label("\(recipeCount) \(recipeCount == 1 ? "recipe" : "recipes")", systemImage: "tray.fill")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    Spacer()
+                    
+                    // Share button (bottom right)
+                    Button(action: {
+                        showingShareSheet = true
+                    }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .padding(4)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(12)
             .frame(width: 160, height: 100)
             
-            // Menu overlay
+            // Menu overlay (top right)
             if collection.name != "Favorites" {
                 VStack {
                     HStack {
@@ -1149,6 +1676,9 @@ struct CollectionCard: View {
             Button("Cancel", role: .cancel) { }
         } message: {
             Text("Are you sure? This action cannot be undone.")
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            ShareCollectionSheet(collection: collection)
         }
     }
 }
@@ -1347,7 +1877,7 @@ struct LinkInputContent: View {
                            text: "Share → Copy Link from Instagram")
                     
                     TipRow(icon: "text.alignleft",
-                           text: "Works with recipe descriptions")
+                           text: "Works best with the recipe in caption")
                     
                     TipRow(icon: "clock",
                            text: "Processing takes 30-90 seconds")
