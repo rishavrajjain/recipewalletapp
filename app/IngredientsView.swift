@@ -24,7 +24,7 @@ struct IngredientsView: View {
                 }) {
                     Image(systemName: "cart.badge.plus")
                         .font(.system(size: 20, weight: .medium))
-                        .foregroundColor(Color(red: 0.2, green: 0.6, blue: 0.2))
+                        .foregroundColor(Color(red: 0.15, green: 0.4, blue: 0.2))
                 }
                 .buttonStyle(.plain)
             }

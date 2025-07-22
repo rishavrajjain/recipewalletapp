@@ -5,6 +5,9 @@ struct ShoppingListView: View {
     @EnvironmentObject var recipeStore: RecipeStore
     @State private var selectedItems = Set<UUID>()
     @State private var isSelectionMode = false
+    @State private var newItemText = ""
+    @State private var showingAddField = false
+    @FocusState private var isAddFieldFocused: Bool
     
     var body: some View {
         NavigationView {
@@ -19,12 +22,12 @@ struct ShoppingListView: View {
                             // Icon with subtle background
                             ZStack {
                                 Circle()
-                                    .fill(Color.blue.opacity(0.1))
+                                    .fill(Color(red: 1.0, green: 0.85, blue: 0.1).opacity(0.15))
                                     .frame(width: 80, height: 80)
                                 
                                 Image(systemName: "cart")
                                     .font(.system(size: 32, weight: .medium))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(Color(red: 0.15, green: 0.4, blue: 0.2))
                             }
                             
                             VStack(spacing: 12) {
@@ -32,11 +35,11 @@ struct ShoppingListView: View {
                                     .font(.system(size: 22, weight: .semibold))
                                     .foregroundColor(.primary)
                                 
-                                Text("Start by adding ingredients from your favorite recipes to build your shopping list")
+                                Text("Add ingredients from recipes or type your own items")
                                     .font(.system(size: 16))
                                     .foregroundColor(.secondary)
                                     .multilineTextAlignment(.center)
-                                    .lineLimit(3)
+                                    .lineLimit(2)
                                     .padding(.horizontal, 20)
                             }
                         }
@@ -47,28 +50,7 @@ struct ShoppingListView: View {
                         .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
                         .padding(.horizontal, 20)
                         
-                        // Left-aligned tip section
-                        VStack(spacing: 0) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    HStack(spacing: 6) {
-                                        Text("💡")
-                                            .font(.system(size: 14))
-                                        Text("Quick Tip")
-                                            .font(.system(size: 14, weight: .semibold))
-                                            .foregroundColor(.blue)
-                                    }
-                                    
-                                    Text("Go to Home → View any recipe → Tap ingredients to add them here")
-                                        .font(.system(size: 13))
-                                        .foregroundColor(.secondary)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                Spacer()
-                            }
-                            .padding(.horizontal, 24)
-                            .padding(.top, 24)
-                        }
+                        
                         
                         Spacer()
                         Spacer() // Extra spacer to center better
@@ -77,6 +59,38 @@ struct ShoppingListView: View {
                     // Shopping list with items
                     ScrollView {
                         LazyVStack(spacing: 0) {
+                            // Add new item field
+                            if showingAddField {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 20, weight: .medium))
+                                        .foregroundColor(.black)
+                                    
+                                    TextField("Add item", text: $newItemText)
+                                        .focused($isAddFieldFocused)
+                                        .font(.system(size: 16, weight: .medium))
+                                        .onSubmit {
+                                            addNewItem()
+                                        }
+                                    
+                                    Button("Cancel") {
+                                        withAnimation(.easeOut(duration: 0.2)) {
+                                            showingAddField = false
+                                            newItemText = ""
+                                        }
+                                    }
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.secondary)
+                                }
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 14)
+                                .background(Color(.systemGray6))
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                                
+                                Divider()
+                                    .padding(.leading, 52)
+                            }
+                            
                             ForEach(recipeStore.shoppingList) { item in
                                 HStack(spacing: 16) {
                                     // Selection/Checkbox circle
@@ -85,7 +99,7 @@ struct ShoppingListView: View {
                                     }) {
                                         Image(systemName: selectedItems.contains(item.id) ? "checkmark.circle.fill" : "circle")
                                             .font(.system(size: 20, weight: .medium))
-                                            .foregroundColor(selectedItems.contains(item.id) ? Color(red: 0.2, green: 0.6, blue: 0.2) : Color(red: 0.2, green: 0.6, blue: 0.2))
+                                            .foregroundColor(selectedItems.contains(item.id) ? Color(red: 0.15, green: 0.4, blue: 0.2) : Color(red: 0.15, green: 0.4, blue: 0.2))
                                             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedItems.contains(item.id))
                                     }
                                     .buttonStyle(.plain)
@@ -122,9 +136,23 @@ struct ShoppingListView: View {
             .navigationBarTitleDisplayMode(.large)
             .background(Color(.systemBackground))
             .toolbar {
-                if !recipeStore.shoppingList.isEmpty {
-                    ToolbarItem(placement: .navigationBarTrailing) {
+                // Add button (always visible)
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    if !recipeStore.shoppingList.isEmpty && !showingAddField {
                         Menu {
+                            Button(action: {
+                                withAnimation(.easeIn(duration: 0.2)) {
+                                    showingAddField = true
+                                }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    isAddFieldFocused = true
+                                }
+                            }) {
+                                Label("Add Item", systemImage: "plus")
+                            }
+                            
+                            Divider()
+                            
                             if !selectedItems.isEmpty {
                                 Button(action: copySelectedItems) {
                                     Label("Copy Selected", systemImage: "doc.on.clipboard")
@@ -146,21 +174,61 @@ struct ShoppingListView: View {
                                 .foregroundColor(.primary)
                                 .rotationEffect(.degrees(90))
                         }
-                    }
-                    
-                    if !selectedItems.isEmpty {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("Deselect All") {
-                                withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                    selectedItems.removeAll()
-                                }
+                    } else if recipeStore.shoppingList.isEmpty {
+                        Button(action: {
+                            withAnimation(.easeIn(duration: 0.2)) {
+                                showingAddField = true
                             }
-                            .font(.system(size: 16))
-                            .foregroundColor(Color(red: 0.2, green: 0.6, blue: 0.2))
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                isAddFieldFocused = true
+                            }
+                        }) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.black)
                         }
                     }
                 }
+                
+                if !selectedItems.isEmpty {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Deselect All") {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                selectedItems.removeAll()
+                            }
+                        }
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(red: 0.15, green: 0.4, blue: 0.2))
+                    }
+                }
             }
+        }
+    }
+    
+    // MARK: - Adding Items
+    
+    private func addNewItem() {
+        let trimmedText = newItemText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else { return }
+        
+        // Check if item already exists
+        let existsAlready = recipeStore.shoppingList.contains { item in
+            item.name.lowercased() == trimmedText.lowercased()
+        }
+        
+        if !existsAlready {
+            let newItem = ShoppingListItem(name: trimmedText, fromRecipe: nil)
+            recipeStore.shoppingList.insert(newItem, at: 0)
+            
+            // Haptic feedback
+            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+            impactFeedback.impactOccurred()
+        }
+        
+        // Reset and hide field
+        newItemText = ""
+        withAnimation(.easeOut(duration: 0.2)) {
+            showingAddField = false
         }
     }
     

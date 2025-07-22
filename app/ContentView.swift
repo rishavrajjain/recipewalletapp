@@ -1,6 +1,19 @@
 import SwiftUI
 import Foundation
 
+// MARK: - Brand Colors
+extension Color {
+    // Primary brand colors matching the new app icon
+    static let brandYellow = Color(red: 1.0, green: 0.8, blue: 0.0)       // Pure vibrant yellow from icon
+    static let brandWhite = Color(red: 0.98, green: 0.98, blue: 1.0)      // Elegant white from pepper
+    static let brandGray = Color(red: 0.45, green: 0.45, blue: 0.5)       // Sophisticated gray
+    static let brandDarkGray = Color(red: 0.25, green: 0.25, blue: 0.3)   // Deep contrast
+    
+    // Accent colors
+    static let brandGold = Color(red: 1.0, green: 0.75, blue: 0.0)        // Rich golden accent
+    static let brandSilver = Color(red: 0.7, green: 0.7, blue: 0.75)      // Silver accent
+}
+
 // MARK: - Notification Names
 extension Notification.Name {
     static let showUserProfile = Notification.Name("showUserProfile")
@@ -738,28 +751,12 @@ struct TabBarButton: View {
             VStack(spacing: 3) {
                 Image(systemName: icon)
                     .font(.system(size: isProminent ? 22 : 18, weight: .medium))
-                    .foregroundColor(isSelected ? (isProminent ? .white : Color(red: 0.2, green: 0.6, blue: 0.2)) : .gray)
+                    .foregroundColor(isSelected ? .brandDarkGray : .brandSilver)
                     .frame(width: isProminent ? 38 : 28, height: isProminent ? 38 : 28)
-                    .background {
-                        if isProminent && isSelected {
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color(red: 0.2, green: 0.6, blue: 0.2), Color(red: 0.15, green: 0.5, blue: 0.15)]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        } else {
-                            Color.clear
-                        }
-                    }
-                    .clipShape(Circle())
-                    .shadow(
-                        color: isProminent && isSelected ? Color(red: 0.2, green: 0.6, blue: 0.2).opacity(0.3) : .clear,
-                        radius: 3, x: 0, y: 1
-                    )
                 
                 Text(title)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isSelected ? Color(red: 0.2, green: 0.6, blue: 0.2) : .gray)
+                    .foregroundColor(isSelected ? .brandDarkGray : .brandSilver)
                     .lineLimit(1)
             }
         }
@@ -808,7 +805,7 @@ struct ImportTabView: View {
                         HStack(spacing: 16) {
                             Image(systemName: "plus.circle.fill")
                                 .font(.system(size: 28, weight: .medium))
-                                .foregroundColor(.blue)
+                                .foregroundColor(.black)
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("Import Recipe")
@@ -898,7 +895,7 @@ struct SourceCard: View {
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 20, weight: .medium))
-                .foregroundColor(.blue)
+                .foregroundColor(.black)
                 .frame(width: 32, height: 32)
             
             VStack(spacing: 2) {
@@ -924,9 +921,13 @@ struct SourceCard: View {
 struct ContentView: View {
     @StateObject private var recipeStore = RecipeStore()
     
+    // Force light mode flag - set to true to always use light mode
+    private let forceAlwaysLightMode = true
+    
     var body: some View {
         TabBarView()
             .environmentObject(recipeStore)
+            .preferredColorScheme(forceAlwaysLightMode ? .light : nil)
     }
 }
 
@@ -1455,31 +1456,26 @@ struct ImportReelSheet: View {
     var body: some View {
         NavigationView {
             VStack(spacing: 0) {
-                VStack(spacing: 20) {
+                VStack(spacing: 8) {
                     HStack(spacing: 8) {
                         ForEach(0..<2) { index in
                             Circle()
-                                .fill(index <= currentStep.rawValue ? Color.pink : Color.gray.opacity(0.3))
-                                .frame(width: 6, height: 6)
+                                .fill(index <= currentStep.rawValue ? Color.black : Color.gray.opacity(0.2))
+                                .frame(width: 5, height: 5)
                         }
                     }
-                    .padding(.top, 12)
+                    .padding(.top, 24)
                     
-                    HStack(spacing: 12) {
-                        Image(systemName: currentStep == .linkInput ? "link" : "pencil")
-                            .font(.title2)
-                            .foregroundColor(.pink)
-                            .frame(width: 32, height: 32)
-                            .background(Color.pink.opacity(0.1))
-                            .clipShape(Circle())
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(currentStep == .linkInput ? "Add Link" : "Name Your Recipe")
-                                .font(.title3).fontWeight(.semibold)
-                            Text(currentStep == .linkInput ? "" : "Optional: Give it a custom name")
-                                .font(.caption).foregroundColor(.secondary)
+                    if currentStep == .nameInput {
+                        VStack(spacing: 4) {
+                            Text("Name Your Recipe")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.black)
+                            Text("Optional: Give it a custom name")
+                                .font(.system(size: 14))
+                                .foregroundColor(.secondary)
                         }
-                        Spacer()
+                        .padding(.top, 8)
                     }
                 }
                 .padding(.horizontal, 24)
@@ -1506,10 +1502,13 @@ struct ImportReelSheet: View {
                         }
                         .frame(maxWidth: .infinity).frame(height: 50)
                     }
-                    .buttonStyle(.borderedProminent).tint(.pink).disabled(currentStep == .linkInput && !isLinkValid)
+                    .buttonStyle(.borderedProminent)
+                    .tint(.black)
+                    .disabled(currentStep == .linkInput && !isLinkValid)
                     
                     Button("Cancel") { dismiss() }
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.black.opacity(0.6))
+                        .font(.system(size: 16, weight: .medium))
                 }
                 .padding(.horizontal, 24)
                 .padding(.bottom, 34)
@@ -1610,7 +1609,7 @@ struct LoadingRecipeCard: View {
                 VStack(spacing: 8) {
                     ProgressView()
                         .scaleEffect(0.8)
-                        .tint(.blue)
+                        .tint(.brandYellow)
                     
                     Text("Loading...")
                         .font(.caption)
@@ -1648,11 +1647,11 @@ struct LoadingRecipeCard: View {
                 HStack(spacing: 4) {
                     ProgressView()
                         .scaleEffect(0.6)
-                        .tint(.blue)
+                        .tint(.brandYellow)
                     
                     Text("Extracting recipe...")
                         .font(.caption)
-                        .foregroundColor(.blue)
+                        .foregroundColor(.brandDarkGray)
                 }
             }
             .padding(10)
@@ -1662,7 +1661,7 @@ struct LoadingRecipeCard: View {
         .shadow(color: .black.opacity(0.1), radius: 5)
         .overlay(
             RoundedRectangle(cornerRadius: 16)
-                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                .stroke(Color.brandYellow.opacity(0.6), lineWidth: 1.5)
         )
         .onAppear {
             isAnimating = true
@@ -1829,7 +1828,7 @@ struct ProcessingIndicator: View {
     
     var body: some View {
         VStack(spacing: 20) {
-            ProgressView().scaleEffect(1.5).tint(.pink)
+            ProgressView().scaleEffect(1.5).tint(.brandYellow)
             VStack(spacing: 8) {
                 Text("Extracting Recipe...").font(.headline).fontWeight(.semibold)
                 Text("AI is analyzing your link and extracting the recipe.\nThis can take up to 90 seconds.").font(.subheadline).foregroundColor(.secondary).multilineTextAlignment(.center)
@@ -1914,41 +1913,37 @@ struct LinkInputContent: View {
         VStack(spacing: 24) {
             // URL Input Section
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text("Recipe URL")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                    Spacer()
-                }
+                Text("Recipe URL")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 
-                TextField("Paste any recipe link (TikTok, websites, Instagram...)", text: $reelLink)
+                TextField("Paste recipe link", text: $reelLink)
                     .focused($isLinkFieldFocused)
-                    .textFieldStyle(.roundedBorder)
+                    .textFieldStyle(.plain)
                     .keyboardType(.URL)
                     .autocapitalization(.none)
                     .autocorrectionDisabled()
-                    .font(.body)
+                    .font(.system(size: 16))
+                    .padding(16)
+                    .background(Color.white)
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                    )
+                    .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
             }
             
             // Tips Section
             VStack(spacing: 16) {
-                // Tips Header
-                HStack(alignment: .center, spacing: 8) {
-                    Image(systemName: "info.circle.fill")
-                        .foregroundColor(.blue)
-                        .font(.title3)
-                    
-                    Text("Quick Tips")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
-                    
-                    Spacer()
-                }
+                Text("Quick Tips")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 
                 // Tips List
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 16) {
                     TipRow(icon: "square.and.arrow.up",
                            text: "Copy link from any recipe source")
                     
@@ -1958,16 +1953,11 @@ struct LinkInputContent: View {
                     TipRow(icon: "wand.and.stars",
                            text: "AI extracts ingredients & instructions")
                 }
+                .padding(20)
+                .background(Color(.systemGray6))
+                .cornerRadius(16)
             }
-            .padding(20)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(Color.blue.opacity(0.06))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16)
-                    .stroke(Color.blue.opacity(0.15), lineWidth: 1)
-            )
+            .padding(.vertical, 8)
         }
         .padding(.horizontal, 4) // Subtle padding for better visual balance
     }
@@ -1978,15 +1968,15 @@ struct TipRow: View {
     let text: String
     
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             Image(systemName: icon)
-                .foregroundColor(.blue)
-                .font(.system(size: 16, weight: .medium))
-                .frame(width: 20, alignment: .leading)
+                .foregroundColor(.black.opacity(0.6))
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 18)
             
             Text(text)
                 .font(.system(size: 15))
-                .foregroundColor(.secondary)
+                .foregroundColor(.black.opacity(0.7))
                 .multilineTextAlignment(.leading)
             
             Spacer()
