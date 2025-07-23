@@ -139,7 +139,7 @@ struct SimpleRecipe: Codable {
         self.name = recipe.name
         self.description = recipe.description
         self.imageUrl = recipe.imageUrl
-        self.ingredients = recipe.ingredients.map { $0.name }
+        self.ingredients = recipe.ingredients.map { $0.name }  // Extract just the name from Ingredient objects
         self.cookTime = recipe.cookTime
         self.isFromReel = recipe.isFromReel
         self.steps = recipe.steps
@@ -148,7 +148,7 @@ struct SimpleRecipe: Codable {
 }
 
 struct HealthAnalysisRequest: Codable {
-    let recipe: SimpleRecipe
+    let recipe: BackendRecipe  // Changed from SimpleRecipe to BackendRecipe
     let bloodTestId: String?
     let includeBloodTest: Bool
     
@@ -159,37 +159,44 @@ struct HealthAnalysisRequest: Codable {
     }
 }
 
-// Backend compatible ingredient format
-struct BackendIngredient: Codable {
-    let name: String
-    let imageUrl: String
-}
-
-// Backend compatible recipe format
+// Backend compatible recipe format - matches new backend contract
 struct BackendRecipe: Codable {
     let id: String
-    let name: String
+    let title: String  // Changed from 'name' to 'title'
     let description: String
     let imageUrl: String
-    let ingredients: [BackendIngredient]  // Backend expects objects with name and imageUrl
+    let prepTime: Int  // NEW FIELD - required
     let cookTime: Int
-    let isFromReel: Bool
+    let difficulty: String  // NEW FIELD - required ("Easy", "Medium", "Hard")
+    let nutrition: NutritionInfo  // NEW FIELD - required
+    let ingredients: [CategorizedIngredient]  // Changed from [String] to [CategorizedIngredient]
     let steps: [String]
-    let createdAt: Date
+    let isFromReel: Bool
+    let extractedFrom: String  // NEW FIELD - required ("instagram", "tiktok", "youtube", "website")
+    let creatorHandle: String?  // NEW FIELD - optional
+    let creatorName: String?  // NEW FIELD - optional
+    let createdAt: String  // Changed from Date to String
     
-    // Use camelCase field names (backend expects camelCase)
-    
-    // Convert from new Recipe format to backend format
+    // Convert from our Recipe format to backend format
     init(from recipe: Recipe) {
         self.id = recipe.id
-        self.name = recipe.name
+        self.title = recipe.name  // Map 'name' to 'title'
         self.description = recipe.description
         self.imageUrl = recipe.imageUrl
-        self.ingredients = recipe.ingredients.map { BackendIngredient(name: $0.name, imageUrl: $0.imageUrl) }
+        self.prepTime = recipe.prepTime ?? 0  // Default to 0 if nil
         self.cookTime = recipe.cookTime
-        self.isFromReel = recipe.isFromReel
+        self.difficulty = recipe.difficulty?.rawValue ?? "Medium"  // Default to "Medium"
+        self.nutrition = NutritionInfo(from: recipe.nutrition ?? Nutrition())  // Default empty nutrition
+        self.ingredients = recipe.ingredients.map { CategorizedIngredient(from: $0) }
         self.steps = recipe.steps
-        self.createdAt = recipe.createdAt
+        self.isFromReel = recipe.isFromReel
+        self.extractedFrom = recipe.extractedFrom ?? "website"  // Default to "website"
+        self.creatorHandle = recipe.creatorHandle
+        self.creatorName = recipe.creatorName
+        
+        // Convert Date to ISO string
+        let formatter = ISO8601DateFormatter()
+        self.createdAt = formatter.string(from: recipe.createdAt)
     }
 }
 
@@ -319,7 +326,7 @@ actor HealthAnalysisAPI {
         request.timeoutInterval = 30
         
         let requestBody = HealthAnalysisRequest(
-            recipe: SimpleRecipe(from: recipe),  // Convert to backend format
+            recipe: BackendRecipe(from: recipe),  // Convert to new backend format
             bloodTestId: bloodTestId,
             includeBloodTest: includeBloodTest
         )
@@ -335,13 +342,19 @@ actor HealthAnalysisAPI {
         print("Recipe: \(recipe.name)")
         print("Original Recipe Ingredients:")
         for (i, ingredient) in recipe.ingredients.enumerated() {
-            print("  [\(i)] name: '\(ingredient.name)', imageUrl: '\(ingredient.imageUrl)'")
+            print("  [\(i)] name: '\(ingredient.name)', category: '\(ingredient.category.displayName)'")
         }
         
         let backendRecipe = BackendRecipe(from: recipe)
+        print("Backend Recipe Fields:")
+        print("  title: '\(backendRecipe.title)'")
+        print("  prepTime: \(backendRecipe.prepTime)")
+        print("  difficulty: '\(backendRecipe.difficulty)'")
+        print("  extractedFrom: '\(backendRecipe.extractedFrom)'")
+        print("  nutrition: calories=\(backendRecipe.nutrition.calories ?? 0), protein=\(backendRecipe.nutrition.protein ?? 0)")
         print("Backend Recipe Ingredients:")
         for (i, ingredient) in backendRecipe.ingredients.enumerated() {
-            print("  [\(i)] name: '\(ingredient.name)', imageUrl: '\(ingredient.imageUrl)'")
+            print("  [\(i)] name: '\(ingredient.name)', category: '\(ingredient.category)'")
         }
         
         // Print the actual JSON being sent
@@ -824,13 +837,16 @@ struct _HealthReportPreview: View {
                     name: "Cheesy Pasta",
                     description: "Rich and creamy",
                     imageUrl: "",
-                    ingredients: [
-                        Ingredient(name: "pasta", imageUrl: ""),
-                        Ingredient(name: "cheese", imageUrl: ""),
-                        Ingredient(name: "butter", imageUrl: ""),
-                        Ingredient(name: "cream", imageUrl: "")
-                    ],
+                    prepTime: 5,
                     cookTime: 20,
+                    difficulty: .easy,
+                    nutrition: Nutrition(calories: 450, protein: 15, carbs: 55, fats: 18, portions: 2),
+                    ingredients: [
+                        Ingredient(name: "pasta", category: .pastaRiceGrains),
+                        Ingredient(name: "cheese", category: .dairy),
+                        Ingredient(name: "butter", category: .dairy),
+                        Ingredient(name: "cream", category: .dairy)
+                    ],
                     isFromReel: false,
                     steps: ["Cook pasta", "Add cheese"],
                     createdAt: Date()

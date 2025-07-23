@@ -18,7 +18,7 @@ struct IngredientsView: View {
                 
                 Spacer()
                 
-                                // Add to Cart Icon
+                // Add to Cart Icon
                 Button(action: {
                     addIngredientsToShoppingList()
                 }) {
@@ -29,47 +29,53 @@ struct IngredientsView: View {
                 .buttonStyle(.plain)
             }
             
+            // Simple flat ingredient list (no categories in recipe view)
             VStack(spacing: 0) {
                 ForEach(Array(recipe.ingredients.enumerated()), id: \.offset) { index, ingredient in
                     HStack(spacing: 12) {
+                        // Simple bullet point
+                        Circle()
+                            .fill(Color.secondary.opacity(0.6))
+                            .frame(width: 6, height: 6)
+                        
                         // Ingredient image (conditionally shown)
                         if showImages {
-                            AsyncImage(url: ingredient.resolvedImageURL) { image in
+                            AsyncImage(url: ingredient.categoryImageURL) { image in
                                 image
                                     .resizable()
                                     .aspectRatio(contentMode: .fill)
                             } placeholder: {
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.gray.opacity(0.3))
+                                    .fill(ingredient.category.color.opacity(0.2))
                                     .overlay(
-                                        Image(systemName: "photo")
-                                            .foregroundColor(.gray)
+                                        Image(systemName: ingredient.category.iconName)
+                                            .foregroundColor(ingredient.category.color)
                                             .font(.system(size: 16))
                                     )
                             }
-                            .frame(width: 50, height: 50)
+                            .frame(width: 40, height: 40)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                         
                         Text(ingredient.name)
-                            .font(.system(size: 16))
+                            .font(.system(size: 15))
                             .foregroundColor(.primary)
                             .multilineTextAlignment(.leading)
                         
                         Spacer()
                     }
                     .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
+                    .padding(.vertical, 12)
                     .background(Color(.secondarySystemGroupedBackground))
                     .onAppear {
                         if showImages {
-                            print("✅ Ingredient \(ingredient.name) image URL: \(ingredient.resolvedImageURL?.absoluteString ?? "nil")")
+                            print("✅ Ingredient \(ingredient.name) category image URL: \(ingredient.categoryImageURL?.absoluteString ?? "nil")")
                         }
                     }
                     
                     if index < recipe.ingredients.count - 1 {
                         Divider()
-                            .padding(.leading, showImages ? 78 : 16) // Adjust divider offset based on image visibility
+                            .padding(.leading, showImages ? 58 : 34) // Adjust divider offset based on image visibility
                     }
                 }
             }
@@ -116,5 +122,91 @@ struct IngredientsView: View {
         // Haptic feedback
         let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
         impactFeedback.impactOccurred()
+    }
+}
+
+struct CategorySection: View {
+    let category: IngredientCategory
+    let ingredients: [Ingredient]
+    let showImages: Bool
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Category Header
+            HStack(spacing: 8) {
+                Image(systemName: category.iconName)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(category.color)
+                    .frame(width: 20)
+                
+                Text(category.displayName)
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                Text("\(ingredients.count)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(category.color.opacity(0.1))
+                    .cornerRadius(8)
+            }
+            .padding(.horizontal, 4)
+            
+            // Ingredients in this category
+            VStack(spacing: 0) {
+                ForEach(Array(ingredients.enumerated()), id: \.offset) { index, ingredient in
+                    HStack(spacing: 12) {
+                        // Category color indicator
+                        Rectangle()
+                            .fill(category.color)
+                            .frame(width: 3, height: 40)
+                            .cornerRadius(1.5)
+                        
+                        // Ingredient image (conditionally shown)
+                        if showImages {
+                            AsyncImage(url: ingredient.categoryImageURL) { image in
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            } placeholder: {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(category.color.opacity(0.2))
+                                    .overlay(
+                                        Image(systemName: category.iconName)
+                                            .foregroundColor(category.color)
+                                            .font(.system(size: 16))
+                                    )
+                            }
+                            .frame(width: 40, height: 40)
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                        
+                        Text(ingredient.name)
+                            .font(.system(size: 15))
+                            .foregroundColor(.primary)
+                            .multilineTextAlignment(.leading)
+                        
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .background(Color(.secondarySystemGroupedBackground))
+                    .onAppear {
+                        if showImages {
+                            print("✅ Ingredient \(ingredient.name) category image URL: \(ingredient.categoryImageURL?.absoluteString ?? "nil")")
+                        }
+                    }
+                    
+                    if index < ingredients.count - 1 {
+                        Divider()
+                            .padding(.leading, showImages ? 67 : 27) // Adjust divider offset based on image visibility
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
     }
 } 

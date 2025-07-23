@@ -15,7 +15,7 @@ struct APIConfig {
     static var baseURL: URL {
         switch environment {
         case .local:
-            return URL(string: "http://localhost:8000")!
+            return URL(string: "http://192.168.1.4:8000")!
         case .production:
             return URL(string: "https://recipewallet.onrender.com")!
         }

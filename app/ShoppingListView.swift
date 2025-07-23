@@ -9,6 +9,27 @@ struct ShoppingListView: View {
     @State private var showingAddField = false
     @FocusState private var isAddFieldFocused: Bool
     
+    // Group shopping list items by category
+    private var groupedShoppingListItems: [(key: IngredientCategory?, value: [ShoppingListItem])] {
+        let grouped = Dictionary(grouping: recipeStore.shoppingList) { item in
+            item.category
+        }
+        
+        // Sort categories: items with categories first (sorted by category name), then items without categories
+        return grouped.sorted { first, second in
+            switch (first.key, second.key) {
+            case (nil, nil):
+                return false // Both nil, maintain order
+            case (nil, _):
+                return false // nil goes last
+            case (_, nil):
+                return true // non-nil goes first
+            case (let cat1?, let cat2?):
+                return cat1.displayName < cat2.displayName // sort by category name
+            }
+        }
+    }
+    
     var body: some View {
         NavigationView {
             Group {
@@ -91,7 +112,36 @@ struct ShoppingListView: View {
                                     .padding(.leading, 52)
                             }
                             
-                            ForEach(recipeStore.shoppingList) { item in
+                            // Group items by category for better organization
+                            ForEach(groupedShoppingListItems, id: \.key) { categoryGroup in
+                                // Category header (only if items have categories)
+                                if let category = categoryGroup.key {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: category.iconName)
+                                            .font(.system(size: 14, weight: .medium))
+                                            .foregroundColor(category.color)
+                                            .frame(width: 20)
+                                        
+                                        Text(category.displayName)
+                                            .font(.system(size: 16, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                        
+                                        Spacer()
+                                        
+                                        Text("\(categoryGroup.value.count)")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(.secondary)
+                                            .padding(.horizontal, 8)
+                                            .padding(.vertical, 2)
+                                            .background(category.color.opacity(0.1))
+                                            .cornerRadius(8)
+                                    }
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 8)
+                                    .background(Color(.systemGray6))
+                                }
+                                
+                                ForEach(categoryGroup.value) { item in
                                 HStack(spacing: 16) {
                                     // Selection/Checkbox circle
                                     Button(action: {
@@ -123,12 +173,16 @@ struct ShoppingListView: View {
                                 .padding(.vertical, 14)
                                 .background(Color(.systemBackground))
                                 
-                                if item.id != recipeStore.shoppingList.last?.id {
-                                    Divider()
-                                        .padding(.leading, 56)
+                                    if item.id != categoryGroup.value.last?.id {
+                                        Divider()
+                                            .padding(.leading, 56)
+                                    }
                                 }
                             }
                         }
+                        
+                        // Bottom padding to account for custom tab bar
+                        Spacer(minLength: 100)
                     }
                 }
             }

@@ -21,23 +21,120 @@ extension Notification.Name {
 
 // ========================================================================
 // MARK: - Models
-// ==================================================x======================
+// ========================================================================
 
+// MARK: - Ingredient Categories
+enum IngredientCategory: String, CaseIterable, Codable {
+    case fruitVegetables = "Fruit & Vegetables"
+    case meatPoultryFish = "Meat, Poultry, Fish"
+    case pastaRiceGrains = "Pasta, Rice & Grains"
+    case herbsSpices = "Herbs & Spices"
+    case cupboardStaples = "Cupboard Staples"
+    case dairy = "Dairy"
+    case cannedJarred = "Canned & Jarred"
+    case other = "Other"
+    
+    var displayName: String {
+        return self.rawValue
+    }
+    
+    var iconName: String {
+        switch self {
+        case .fruitVegetables: return "leaf.fill"
+        case .meatPoultryFish: return "fish.fill"
+        case .pastaRiceGrains: return "grain.fill"
+        case .herbsSpices: return "sparkles"
+        case .cupboardStaples: return "cabinet.fill"
+        case .dairy: return "drop.fill"
+        case .cannedJarred: return "cylinder.fill"
+        case .other: return "questionmark.circle.fill"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .fruitVegetables: return .green
+        case .meatPoultryFish: return .red
+        case .pastaRiceGrains: return .orange
+        case .herbsSpices: return .purple
+        case .cupboardStaples: return .brown
+        case .dairy: return .blue
+        case .cannedJarred: return .gray
+        case .other: return .secondary
+        }
+    }
+}
+
+// MARK: - Nutrition Information
+struct Nutrition: Codable, Hashable {
+    let calories: Int?
+    let protein: Int?
+    let carbs: Int?
+    let fats: Int?
+    let portions: Int?
+    
+    init(calories: Int? = nil, protein: Int? = nil, carbs: Int? = nil, fats: Int? = nil, portions: Int? = nil) {
+        self.calories = calories
+        self.protein = protein
+        self.carbs = carbs
+        self.fats = fats
+        self.portions = portions
+    }
+}
+
+// MARK: - Backend Compatible Models
+struct NutritionInfo: Codable, Hashable {
+    let calories: Int?
+    let protein: Int?
+    let carbs: Int?
+    let fats: Int?
+    let portions: Int?
+    
+    init(calories: Int? = nil, protein: Int? = nil, carbs: Int? = nil, fats: Int? = nil, portions: Int? = nil) {
+        self.calories = calories
+        self.protein = protein
+        self.carbs = carbs
+        self.fats = fats
+        self.portions = portions
+    }
+    
+    // Convert from our Nutrition model
+    init(from nutrition: Nutrition) {
+        self.calories = nutrition.calories
+        self.protein = nutrition.protein
+        self.carbs = nutrition.carbs
+        self.fats = nutrition.fats
+        self.portions = nutrition.portions
+    }
+}
+
+struct CategorizedIngredient: Codable, Hashable {
+    let name: String
+    let category: String
+    
+    // Convert from our Ingredient model
+    init(from ingredient: Ingredient) {
+        self.name = ingredient.name
+        self.category = ingredient.category.rawValue
+    }
+}
+
+// MARK: - Ingredient Model
 struct Ingredient: Codable, Identifiable, Hashable {
     let id = UUID()
     let name: String
-    let imageUrl: String
+    let category: IngredientCategory
     
     enum CodingKeys: String, CodingKey {
         case name
-        case imageUrl
+        case category
     }
     
     // Helper initializer for backward compatibility
-    init(name: String, imageUrl: String = "") {
-        print("🥕 INGREDIENT: Creating ingredient - Name: '\(name)', ImageURL: '\(imageUrl)'")
+    init(name: String, category: IngredientCategory = .other) {
+        print("🥕 INGREDIENT: Creating ingredient - Name: '\(name)', Category: '\(category.displayName)'")
         self.name = name
-        self.imageUrl = imageUrl
+        self.category = category
     }
     
     // Custom decoder to handle potential data issues
@@ -45,11 +142,11 @@ struct Ingredient: Codable, Identifiable, Hashable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         
         let decodedName = try container.decode(String.self, forKey: .name)
-        let decodedImageUrl = try container.decodeIfPresent(String.self, forKey: .imageUrl) ?? ""
+        let categoryString = try container.decodeIfPresent(String.self, forKey: .category) ?? "Other"
         
-        print("🥕 INGREDIENT: Decoding ingredient - Name: '\(decodedName)', ImageURL: '\(decodedImageUrl)'")
+        print("🥕 INGREDIENT: Decoding ingredient - Name: '\(decodedName)', Category: '\(categoryString)'")
         
-        // Validate that name is not empty or contains invalid characters
+        // Validate that name is not empty
         guard !decodedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             print("❌ INGREDIENT: Empty ingredient name detected")
             throw DecodingError.dataCorrupted(DecodingError.Context(
@@ -58,59 +155,147 @@ struct Ingredient: Codable, Identifiable, Hashable {
             ))
         }
         
+        // Map category string to enum, fallback to .other if not found
+        self.category = IngredientCategory(rawValue: categoryString) ?? .other
         self.name = decodedName
-        self.imageUrl = decodedImageUrl
     }
     
-    // Computed property that returns a usable URL – falls back to Unsplash if missing
-    var resolvedImageURL: URL? {
-        if !imageUrl.trimmingCharacters(in: .whitespaces).isEmpty,
-           let url = URL(string: imageUrl) {
-            print("🥕 INGREDIENT: Using provided image URL for '\(name)': \(url)")
-            return url
-        }
-        // Fallback to LoremFlickr keyword image (reliable)
-        let keyword = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "food"
+    // Computed property that returns a placeholder image URL based on category
+    var categoryImageURL: URL? {
+        let keyword = category.displayName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "food"
         let fallbackURL = URL(string: "https://loremflickr.com/400/400/\(keyword)")
-        print("🥕 INGREDIENT: Using fallback image URL for '\(name)': \(fallbackURL?.absoluteString ?? "nil")")
+        print("🥕 INGREDIENT: Using category-based image URL for '\(name)': \(fallbackURL?.absoluteString ?? "nil")")
         return fallbackURL
     }
 }
 
+// MARK: - Recipe Difficulty
+enum RecipeDifficulty: String, CaseIterable, Codable {
+    case easy = "Easy"
+    case medium = "Medium"
+    case hard = "Hard"
+    
+    var displayName: String {
+        return self.rawValue
+    }
+    
+    var color: Color {
+        switch self {
+        case .easy: return .green
+        case .medium: return .orange
+        case .hard: return .red
+        }
+    }
+    
+    var iconName: String {
+        switch self {
+        case .easy: return "1.circle.fill"
+        case .medium: return "2.circle.fill"
+        case .hard: return "3.circle.fill"
+        }
+    }
+}
+
+// MARK: - Recipe Model
 struct Recipe: Identifiable, Codable, Hashable {
     let id: String
     var name: String
     let description: String
     let imageUrl: String
-    let ingredients: [Ingredient]  // Changed from [String] to [Ingredient]
+    let prepTime: Int?
     let cookTime: Int
+    let difficulty: RecipeDifficulty?
+    let nutrition: Nutrition?
+    let ingredients: [Ingredient]
     let isFromReel: Bool
+    let extractedFrom: String?  // NEW: "instagram", "tiktok", "youtube", or "website"
+    let creatorHandle: String?  // NEW: Creator's username with @ prefix
+    let creatorName: String?    // NEW: Creator's display name
     let steps: [String]
     let createdAt: Date
     
-    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, ingredients: [Ingredient], cookTime: Int, isFromReel: Bool = false, steps: [String], createdAt: Date = Date()) {
+    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, prepTime: Int? = nil, cookTime: Int, difficulty: RecipeDifficulty? = nil, nutrition: Nutrition? = nil, ingredients: [Ingredient], isFromReel: Bool = false, extractedFrom: String? = nil, creatorHandle: String? = nil, creatorName: String? = nil, steps: [String], createdAt: Date = Date()) {
         self.id = id
         self.name = name
         self.description = description
         self.imageUrl = imageUrl
-        self.ingredients = ingredients
+        self.prepTime = prepTime
         self.cookTime = cookTime
+        self.difficulty = difficulty
+        self.nutrition = nutrition
+        self.ingredients = ingredients
         self.isFromReel = isFromReel
+        self.extractedFrom = extractedFrom
+        self.creatorHandle = creatorHandle
+        self.creatorName = creatorName
         self.steps = steps
         self.createdAt = createdAt
     }
     
-    // Backward compatibility initializer for string ingredients
+    // Backward compatibility initializer for string ingredients (deprecated)
     init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, ingredients: [String], cookTime: Int, isFromReel: Bool = false, steps: [String], createdAt: Date = Date()) {
         self.id = id
         self.name = name
         self.description = description
         self.imageUrl = imageUrl
-        self.ingredients = ingredients.map { Ingredient(name: $0) }
+        self.prepTime = nil
         self.cookTime = cookTime
+        self.difficulty = nil
+        self.nutrition = nil
+        self.ingredients = ingredients.map { Ingredient(name: $0, category: .other) }
         self.isFromReel = isFromReel
+        self.extractedFrom = nil
+        self.creatorHandle = nil
+        self.creatorName = nil
         self.steps = steps
         self.createdAt = createdAt
+    }
+    
+    // Computed properties for UI convenience
+    var totalTime: Int {
+        return (prepTime ?? 0) + cookTime
+    }
+    
+    var difficultyText: String {
+        return difficulty?.displayName ?? "Unknown"
+    }
+    
+    var ingredientsByCategory: [IngredientCategory: [Ingredient]] {
+        return Dictionary(grouping: ingredients, by: { $0.category })
+    }
+    
+    // Platform and creator convenience properties
+    var platformDisplayName: String {
+        switch extractedFrom?.lowercased() {
+        case "instagram": return "Instagram"
+        case "tiktok": return "TikTok"
+        case "youtube": return "YouTube"
+        case "website": return "Website"
+        default: return "Unknown"
+        }
+    }
+    
+    var platformIcon: String {
+        switch extractedFrom?.lowercased() {
+        case "instagram": return "camera.fill"
+        case "tiktok": return "music.note"
+        case "youtube": return "play.rectangle.fill"
+        case "website": return "globe"
+        default: return "link"
+        }
+    }
+    
+    var hasCreatorInfo: Bool {
+        return creatorHandle != nil || creatorName != nil
+    }
+    
+    var displayCreatorName: String? {
+        if let name = creatorName, !name.isEmpty {
+            return name
+        } else if let handle = creatorHandle, !handle.isEmpty {
+            return handle
+        }
+        return nil
     }
 }
 
@@ -131,17 +316,20 @@ struct Collection: Identifiable, Codable, Hashable {
 struct ShoppingListItem: Identifiable, Codable, Hashable {
     let id = UUID()
     let name: String
+    let category: IngredientCategory?
     let fromRecipe: String?
     let addedAt: Date
     
     enum CodingKeys: String, CodingKey {
         case name
+        case category
         case fromRecipe
         case addedAt
     }
     
-    init(name: String, fromRecipe: String? = nil) {
+    init(name: String, category: IngredientCategory? = nil, fromRecipe: String? = nil) {
         self.name = name
+        self.category = category
         self.fromRecipe = fromRecipe
         self.addedAt = Date()
     }
@@ -160,7 +348,7 @@ private struct APIResponse: Decodable {
 
 private struct APIIngredient: Decodable {
     let name: String
-    let imageUrl: String?
+    let category: String? // Changed from imageUrl to category
     
     // Custom decoder to handle both string and object formats
     init(from decoder: Decoder) throws {
@@ -170,12 +358,12 @@ private struct APIIngredient: Decodable {
             // Backend sent ingredients as strings
             print("🥕 API_INGREDIENT: Decoding string ingredient: '\(stringValue)'")
             self.name = stringValue
-            self.imageUrl = nil
+            self.category = nil // No category for string ingredients
         } else if let dict = try? container.decode([String: String].self) {
             // Backend sent ingredients as objects
             print("🥕 API_INGREDIENT: Decoding object ingredient: \(dict)")
             self.name = dict["name"] ?? ""
-            self.imageUrl = dict["imageUrl"]
+            self.category = dict["category"] // Assuming category is sent as a string
         } else {
             print("❌ API_INGREDIENT: Failed to decode ingredient")
             throw DecodingError.typeMismatch(APIIngredient.self, DecodingError.Context(
@@ -186,7 +374,7 @@ private struct APIIngredient: Decodable {
     }
     
     func asIngredient() -> Ingredient {
-        Ingredient(name: name, imageUrl: imageUrl ?? "")
+        Ingredient(name: name, category: IngredientCategory(rawValue: category ?? "Other") ?? .other)
     }
 }
 
@@ -196,8 +384,13 @@ private struct APIRecipe: Decodable {
     let imageUrl: String?
     let thumbnailUrl: String?
     let ingredients: [APIIngredient]?
+    let prepTimeMinutes: Int?
     let cookTimeMinutes: Int?
-    let totalTimeMinutes: Int?
+    let difficulty: String?
+    let nutrition: Nutrition?
+    let extractedFrom: String?  // NEW: Platform source
+    let creatorHandle: String?  // NEW: Creator's handle
+    let creatorName: String?    // NEW: Creator's name
     let steps: [String]?
     
     func asRecipe() -> Recipe {
@@ -207,14 +400,16 @@ private struct APIRecipe: Decodable {
         print("🍳 API_RECIPE: ImageURL: '\(imageUrl ?? "nil")'")
         print("🍳 API_RECIPE: ThumbnailURL: '\(thumbnailUrl ?? "nil")'")
         print("🍳 API_RECIPE: Ingredients count: \(ingredients?.count ?? 0)")
+        print("🍳 API_RECIPE: Prep time minutes: \(prepTimeMinutes ?? 0)")
         print("🍳 API_RECIPE: Cook time minutes: \(cookTimeMinutes ?? 0)")
-        print("🍳 API_RECIPE: Total time minutes: \(totalTimeMinutes ?? 0)")
+        print("🍳 API_RECIPE: Difficulty: \(difficulty ?? "Unknown")")
+        print("🍳 API_RECIPE: Nutrition: \(nutrition?.calories ?? 0) cal, \(nutrition?.protein ?? 0)g P, \(nutrition?.carbs ?? 0)g C, \(nutrition?.fats ?? 0)g F")
         print("🍳 API_RECIPE: Steps count: \(steps?.count ?? 0)")
         
         // Debug ingredients
         if let ingredients = ingredients {
             for (index, ingredient) in ingredients.enumerated() {
-                print("🍳 API_RECIPE: Ingredient[\(index)]: name='\(ingredient.name)', imageUrl='\(ingredient.imageUrl ?? "nil")'")
+                print("🍳 API_RECIPE: Ingredient[\(index)]: name='\(ingredient.name)', category='\(ingredient.category ?? "nil")'")
             }
         }
         
@@ -239,9 +434,15 @@ private struct APIRecipe: Decodable {
             name: title,
             description: description ?? "Recipe from Reel",
             imageUrl: finalImageUrl,
+            prepTime: prepTimeMinutes,
+            cookTime: cookTimeMinutes ?? 25,
+            difficulty: RecipeDifficulty(rawValue: difficulty ?? "Medium"),
+            nutrition: nutrition,
             ingredients: convertedIngredients,
-            cookTime: cookTimeMinutes ?? totalTimeMinutes ?? 25,
             isFromReel: true,
+            extractedFrom: extractedFrom,
+            creatorHandle: creatorHandle,
+            creatorName: creatorName,
             steps: (steps ?? []).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         )
         
@@ -449,6 +650,21 @@ class RecipeStore: ObservableObject {
         collection.recipeIDs.contains(recipe.id)
     }
     
+    // MARK: Recipe Management
+    
+    func deleteRecipe(_ recipe: Recipe) {
+        // Remove from recipes array
+        recipes.removeAll { $0.id == recipe.id }
+        
+        // Remove from all collections
+        for index in collections.indices {
+            collections[index].recipeIDs.removeAll { $0 == recipe.id }
+        }
+        
+        // Update filtered recipes
+        filterRecipes()
+    }
+    
     // MARK: Shopping List Management
     
     func addIngredientsToShoppingList(_ ingredients: [Ingredient]) {
@@ -457,7 +673,7 @@ class RecipeStore: ObservableObject {
         for ingredient in ingredients {
             // Check if ingredient is already in shopping list
             if !shoppingList.contains(where: { $0.name.lowercased() == ingredient.name.lowercased() }) {
-                let item = ShoppingListItem(name: ingredient.name)
+                let item = ShoppingListItem(name: ingredient.name, category: ingredient.category)
                 newItems.append(item)
             }
         }
@@ -608,22 +824,50 @@ class RecipeStore: ObservableObject {
     
     private func loadSampleData() {
         self.recipes = [
-            Recipe(name: "Classic Spaghetti Carbonara", description: "A creamy Italian pasta dish.", imageUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=400", ingredients: [
-                Ingredient(name: "200g Spaghetti", imageUrl: "https://images.unsplash.com/photo-1551892589-865f69869476?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "100g Guanciale", imageUrl: "https://images.unsplash.com/photo-1449824913935-59a10b8d2000?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "2 large Eggs", imageUrl: "https://images.unsplash.com/photo-1518569656558-1f25e69d93d7?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "50g Pecorino Romano", imageUrl: "https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "Black Pepper", imageUrl: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&q=80&w=400")
-            ], cookTime: 20, steps: ["Boil spaghetti.", "Cook guanciale.", "Mix eggs and cheese.", "Combine all ingredients."]),
-            Recipe(name: "Veg Stir Fry Soupy Udon Noodles", description: "Quick and healthy udon noodle soup.", imageUrl: "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&q=80&w=400", ingredients: [
-                Ingredient(name: "1 lb Chicken Breasts", imageUrl: "https://images.unsplash.com/photo-1604503468506-a8da13d82791?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "1 tbsp Soy Sauce", imageUrl: "https://images.unsplash.com/photo-1609501676725-7186f734b8d8?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "Bell Peppers", imageUrl: "https://images.unsplash.com/photo-1563565375-f3fdfdbefa83?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "Carrots", imageUrl: "https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "Broccoli", imageUrl: "https://images.unsplash.com/photo-1459411621453-7b03977f4bfc?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "Garlic", imageUrl: "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?auto=format&fit=crop&q=80&w=400"),
-                Ingredient(name: "Ginger", imageUrl: "https://images.unsplash.com/photo-1615485500704-8e990f9900f7?auto=format&fit=crop&q=80&w=400")
-            ], cookTime: 25, steps: ["Marinate chicken.", "Stir-fry chicken.", "Add veggies.", "Add sauce and serve."])
+            Recipe(
+                name: "Classic Spaghetti Carbonara", 
+                description: "A creamy Italian pasta dish with guanciale and pecorino romano.", 
+                imageUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=400", 
+                prepTime: 10,
+                cookTime: 20, 
+                difficulty: .easy,
+                nutrition: Nutrition(calories: 520, protein: 22, carbs: 58, fats: 24, portions: 4),
+                ingredients: [
+                    Ingredient(name: "200g Spaghetti", category: .pastaRiceGrains),
+                    Ingredient(name: "100g Guanciale", category: .meatPoultryFish),
+                    Ingredient(name: "2 large Eggs", category: .dairy),
+                    Ingredient(name: "50g Pecorino Romano", category: .dairy),
+                    Ingredient(name: "Black Pepper", category: .herbsSpices)
+                ], 
+                isFromReel: false,
+                extractedFrom: "website",
+                creatorHandle: nil,
+                creatorName: nil,
+                steps: ["Boil spaghetti.", "Cook guanciale.", "Mix eggs and cheese.", "Combine all ingredients."]
+            ),
+            Recipe(
+                name: "Chicken Stir Fry Udon", 
+                description: "Quick and healthy udon noodle soup with fresh vegetables.", 
+                imageUrl: "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&q=80&w=400", 
+                prepTime: 15,
+                cookTime: 25, 
+                difficulty: .medium,
+                nutrition: Nutrition(calories: 420, protein: 28, carbs: 45, fats: 12, portions: 2),
+                ingredients: [
+                    Ingredient(name: "1 lb Chicken Breasts", category: .meatPoultryFish),
+                    Ingredient(name: "1 tbsp Soy Sauce", category: .cupboardStaples),
+                    Ingredient(name: "Bell Peppers", category: .fruitVegetables),
+                    Ingredient(name: "Carrots", category: .fruitVegetables),
+                    Ingredient(name: "Broccoli", category: .fruitVegetables),
+                    Ingredient(name: "Garlic", category: .herbsSpices),
+                    Ingredient(name: "Ginger", category: .herbsSpices)
+                ], 
+                isFromReel: true,
+                extractedFrom: "instagram",
+                creatorHandle: "@healthy_chef",
+                creatorName: "Chef Maria",
+                steps: ["Marinate chicken.", "Stir-fry chicken.", "Add veggies.", "Add sauce and serve."]
+            )
         ]
         if let firstRecipe = self.recipes.first {
             self.collections = [
@@ -769,101 +1013,156 @@ struct TabBarButton: View {
 
 struct ImportTabView: View {
     @EnvironmentObject var recipeStore: RecipeStore
-    @State private var showingImportSheet = false
+    @State private var reelLink = ""
+    @State private var customName = ""
+    @State private var showingNameModal = false
+    @FocusState private var isTextFieldFocused: Bool
     
     var body: some View {
         NavigationView {
-            VStack(spacing: 0) {
-                // Clean Header Section
+            ScrollView {
                 VStack(spacing: 32) {
-                    Spacer()
-                    
-                    VStack(spacing: 20) {
+                    // Hero Section
+                    VStack(spacing: 16) {
                         Text("Import Recipes")
-                            .font(.system(size: 34, weight: .bold, design: .default))
+                            .font(.system(size: 32, weight: .bold))
                             .foregroundColor(.primary)
                         
-                        Text("Paste any recipe link and let AI extract the ingredients and instructions for you")
+                        Text("Paste any recipe link and let AI extract everything for you")
                             .font(.system(size: 17))
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
-                            .lineLimit(3)
-                            .padding(.horizontal, 24)
+                            .padding(.horizontal, 32)
                     }
+                    .padding(.top, 20)
                     
-                    Spacer()
-                }
-                .frame(height: 200)
-                .background(Color(.systemBackground))
-                
-                // Import Button Section
-                VStack(spacing: 24) {
-                    // Main Import Button
-                    Button(action: {
-                        showingImportSheet = true
-                    }) {
-                        HStack(spacing: 16) {
-                            Image(systemName: "plus.circle.fill")
-                                .font(.system(size: 28, weight: .medium))
-                                .foregroundColor(.black)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Import Recipe")
-                                    .font(.system(size: 18, weight: .semibold))
-                                    .foregroundColor(.primary)
-                                
-                                Text("From TikTok, Instagram, websites & more")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                            
-                            Spacer()
-                            
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 14, weight: .semibold))
-                                
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 16)
-                        .background(Color(.secondarySystemGroupedBackground))
-                        .cornerRadius(12)
-                    }
-                    .buttonStyle(.plain)
-                    
-                    // Supported Sources
-                    VStack(spacing: 16) {
-                        HStack {
-                            Text("Supported Sources")
-                                .font(.system(size: 16, weight: .semibold))
+                    // Main Import Section
+                    VStack(spacing: 20) {
+                        // URL Input Field
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Recipe URL")
+                                .font(.system(size: 15, weight: .medium))
                                 .foregroundColor(.primary)
                             
-                            Spacer()
+                            HStack(spacing: 12) {
+                                Image(systemName: "link")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(.secondary)
+                                    .frame(width: 20)
+                                
+                                TextField("https://instagram.com/reel/...", text: $reelLink)
+                                    .focused($isTextFieldFocused)
+                                    .font(.system(size: 16))
+                                    .keyboardType(.URL)
+                                    .autocapitalization(.none)
+                                    .autocorrectionDisabled()
+                                
+                                if !reelLink.isEmpty {
+                                    Button(action: { reelLink = "" }) {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(16)
+                            .background(Color(.systemBackground))
+                            .cornerRadius(12)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(isTextFieldFocused ? Color.brandYellow : Color(.separator), lineWidth: 1)
+                            )
                         }
                         
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 12) {
-                            SourceCard(icon: "video.fill", title: "TikTok", subtitle: "Videos & recipes")
-                            SourceCard(icon: "camera.fill", title: "Instagram", subtitle: "Reels & posts")
-                            SourceCard(icon: "globe", title: "Websites", subtitle: "Recipe blogs")
-                            SourceCard(icon: "play.fill", title: "YouTube", subtitle: "Cooking videos")
+                        // Import Action
+                        Button(action: { showingNameModal = true }) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "bolt.fill")
+                                    .font(.system(size: 16, weight: .medium))
+                                Text("Quick Import")
+                                    .font(.system(size: 16, weight: .semibold))
+                            }
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 52)
+                            .background(Color.brandYellow)
+                            .cornerRadius(12)
+                            .shadow(color: Color.brandYellow.opacity(0.3), radius: 4, x: 0, y: 2)
                         }
+                        .disabled(!isLinkValid)
+                        .opacity(isLinkValid ? 1.0 : 0.6)
+                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, 24)
+                    
+                    // Supported Platforms
+                    VStack(spacing: 20) {
+                        HStack {
+                            Text("Supported Platforms")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.primary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 24)
+                        
+                        VStack(spacing: 8) {
+                            PlatformCard(
+                                icon: "",
+                                title: "TikTok",
+                                subtitle: "Videos & recipes",
+                                gradient: []
+                            )
+                            PlatformCard(
+                                icon: "",
+                                title: "Instagram",
+                                subtitle: "Reels & posts",
+                                gradient: []
+                            )
+                            PlatformCard(
+                                icon: "",
+                                title: "YouTube",
+                                subtitle: "Cooking videos",
+                                gradient: []
+                            )
+                            PlatformCard(
+                                icon: "",
+                                title: "Websites",
+                                subtitle: "Recipe blogs",
+                                gradient: []
+                            )
+                        }
+                        .padding(.horizontal, 24)
+                    }
+                    
+                    Spacer(minLength: 40)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
-                
-                Spacer()
             }
             .navigationTitle("")
             .background(Color(.systemGroupedBackground))
+            .onTapGesture {
+                isTextFieldFocused = false
+            }
         }
-        .sheet(isPresented: $showingImportSheet) {
-            ImportReelSheet()
+        .sheet(isPresented: $showingNameModal) {
+            CustomNameModal(reelLink: reelLink, customName: $customName) { name in
+                recipeStore.startImport(url: reelLink, customName: name)
+            }
         }
     }
+    
+    private var isLinkValid: Bool {
+        let trimmed = reelLink.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && (
+            trimmed.hasPrefix("http://") ||
+            trimmed.hasPrefix("https://") ||
+            trimmed.contains(".com") ||
+            trimmed.contains(".org") ||
+            trimmed.contains(".net")
+        )
+    }
+    
+
 }
 
 struct TipItem: View {
@@ -886,33 +1185,143 @@ struct TipItem: View {
     }
 }
 
-struct SourceCard: View {
+struct PlatformCard: View {
     let icon: String
     let title: String
     let subtitle: String
+    let gradient: [Color] // Keep for compatibility but won't use
     
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .medium))
-                .foregroundColor(.black)
-                .frame(width: 32, height: 32)
+        HStack(spacing: 12) {
+            // Simple monochrome icon
+            Image(systemName: platformIcon)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 24, height: 24)
             
-            VStack(spacing: 2) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.primary)
                 
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .font(.system(size: 13))
                     .foregroundColor(.secondary)
             }
+            
+            Spacer()
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 16)
-        .padding(.horizontal, 12)
-        .background(Color(.secondarySystemGroupedBackground))
-        .cornerRadius(10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color(.separator), lineWidth: 0.5)
+        )
+    }
+    
+    private var platformIcon: String {
+        switch title.lowercased() {
+        case "tiktok": return "music.note"
+        case "instagram": return "camera"
+        case "youtube": return "play.rectangle"
+        case "websites": return "globe"
+        default: return "link"
+        }
+    }
+}
+
+struct CustomNameModal: View {
+    let reelLink: String
+    @Binding var customName: String
+    let onImport: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @FocusState private var isNameFieldFocused: Bool
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header with drag indicator
+            VStack(spacing: 16) {
+                // Drag indicator
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.secondary.opacity(0.5))
+                    .frame(width: 36, height: 4)
+                    .padding(.top, 12)
+                
+                VStack(spacing: 8) {
+                    Text("Name Your Recipe")
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(.primary)
+                    
+                    Text("Give your recipe a custom name or leave blank to use the original title")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
+                }
+            }
+            .padding(.bottom, 32)
+            
+            // Input section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Recipe Name (Optional)")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(.primary)
+                
+                TextField("Enter custom name...", text: $customName)
+                    .focused($isNameFieldFocused)
+                    .font(.system(size: 16))
+                    .padding(16)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(isNameFieldFocused ? Color.brandYellow : Color(.separator), lineWidth: 1.5)
+                    )
+            }
+            .padding(.horizontal, 24)
+            
+            Spacer()
+            
+            // Action buttons
+            VStack(spacing: 16) {
+                Button(action: {
+                    onImport(customName)
+                    dismiss()
+                }) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "bolt.fill")
+                            .font(.system(size: 16, weight: .medium))
+                        Text("Import Recipe")
+                            .font(.system(size: 16, weight: .semibold))
+                    }
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(Color.brandYellow)
+                    .cornerRadius(12)
+                    .shadow(color: Color.brandYellow.opacity(0.3), radius: 4, x: 0, y: 2)
+                }
+                .buttonStyle(.plain)
+                
+                Button("Cancel") { 
+                    dismiss() 
+                }
+                .foregroundColor(.secondary)
+                .font(.system(size: 16, weight: .medium))
+            }
+            .padding(.horizontal, 24)
+            .padding(.bottom, 34)
+        }
+        .background(Color(.systemGroupedBackground))
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.hidden) // We have our own
+        .onAppear {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { 
+                isNameFieldFocused = true 
+            }
+        }
     }
 }
 
@@ -996,6 +1405,12 @@ struct HomeView: View {
                                         Button { recipeToManage = recipe } label: {
                                             Label("Add to Collection", systemImage: "folder.badge.plus")
                                         }
+                                        
+                                        Button(role: .destructive) { 
+                                            deleteRecipe(recipe) 
+                                        } label: {
+                                            Label("Delete Recipe", systemImage: "trash")
+                                        }
                                     }
                             }
                             .buttonStyle(.plain)
@@ -1011,6 +1426,9 @@ struct HomeView: View {
                         Spacer(minLength: 80)
                         EmptyStateView(hasRecipes: true, searchText: recipeStore.searchText)
                     }
+                    
+                    // Bottom padding to account for custom tab bar
+                    Spacer(minLength: 100)
                 }
             }
             .navigationTitle("Recipe Wallet")
@@ -1032,6 +1450,10 @@ struct HomeView: View {
         }
         .animation(.default, value: recipeStore.filteredRecipes)
         .animation(.spring(response: 0.6, dampingFraction: 0.8), value: recipeStore.isProcessingReel)
+    }
+    
+    private func deleteRecipe(_ recipe: Recipe) {
+        recipeStore.deleteRecipe(recipe)
     }
 }
 
@@ -1097,6 +1519,7 @@ struct CollectionDetailView: View {
                 }
             }
             .padding()
+            .padding(.bottom, 100) // Extra padding for custom tab bar
         }
         .background(Color(.systemGroupedBackground))
     }
@@ -1120,15 +1543,37 @@ struct RecipeDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(recipe.name).font(.largeTitle).fontWeight(.bold)
                         
+                        // Timing and Difficulty Row
                         HStack(spacing: 16) {
-                            Label("\(recipe.cookTime) min", systemImage: "clock")
-                            if recipe.isFromReel {
-                                Label("Reel Import", systemImage: "video.fill")
-                                    .font(.caption.bold())
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 4)
-                                    .background(Color.pink.cornerRadius(8))
+                            if let prepTime = recipe.prepTime {
+                                Label("\(prepTime) min prep", systemImage: "timer")
+                            }
+                            Label("\(recipe.cookTime) min cook", systemImage: "flame")
+                            
+                            if let difficulty = recipe.difficulty {
+                                HStack(spacing: 4) {
+                                    Image(systemName: difficulty.iconName)
+                                        .foregroundColor(difficulty.color)
+                                    Text(difficulty.displayName)
+                                        .foregroundColor(difficulty.color)
+                                }
+                                .font(.caption.bold())
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(difficulty.color.opacity(0.1))
+                                .cornerRadius(8)
+                            }
+                            
+                            if recipe.isFromReel && recipe.extractedFrom != nil && recipe.platformDisplayName != "Unknown" {
+                                HStack(spacing: 4) {
+                                    Image(systemName: recipe.platformIcon)
+                                    Text(recipe.platformDisplayName)
+                                }
+                                .font(.caption.bold())
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.black.cornerRadius(8))
                             }
                         }
                         .font(.subheadline)
@@ -1138,6 +1583,24 @@ struct RecipeDetailView: View {
                             Text(recipe.description)
                                 .padding(.top, 4)
                         }
+                        
+                        // Creator Information
+                        if recipe.hasCreatorInfo, let creatorName = recipe.displayCreatorName {
+                            HStack(spacing: 8) {
+                                Image(systemName: "person.circle.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.secondary)
+                                
+                                Text("by \(creatorName)")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.top, 8)
+                        }
+                    }
+                    
+                    if let nutrition = recipe.nutrition {
+                        NutritionView(nutrition: nutrition)
                     }
                     
                     HealthReport(recipe: recipe)
@@ -1582,9 +2045,23 @@ struct RecipeCard: View {
                     .frame(height: 44, alignment: .top)
                     .minimumScaleFactor(0.8)
                 
-                Label("\(recipe.cookTime) min", systemImage: "clock")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack(spacing: 4) {
+                    if let prepTime = recipe.prepTime {
+                        Label("\(prepTime + recipe.cookTime) min", systemImage: "clock")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Label("\(recipe.cookTime) min", systemImage: "clock")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    if let difficulty = recipe.difficulty {
+                        Image(systemName: difficulty.iconName)
+                            .font(.caption2)
+                            .foregroundColor(difficulty.color)
+                    }
+                }
             }
             .padding(10)
         }
@@ -1881,7 +2358,7 @@ struct RecipeImagePlaceholder: View {
             Rectangle().fill(Color.gray.opacity(0.1))
             Image(systemName: isFromReel ? "video" : "fork.knife")
                 .font(.largeTitle)
-                .foregroundColor(isFromReel ? .pink.opacity(0.8) : .orange.opacity(0.8))
+                .foregroundColor(isFromReel ? .black.opacity(0.8) : .orange.opacity(0.8))
         }
     }
 }
@@ -1899,6 +2376,111 @@ struct DetailSectionView<Content: View>: View {
                 .background(Color(.secondarySystemBackground))
                 .cornerRadius(12)
         }
+    }
+}
+
+// MARK: - Nutrition View
+struct NutritionView: View {
+    let nutrition: Nutrition
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Clean section title
+            Text("Nutrition")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(.primary)
+                .padding(.bottom, 20)
+            
+            // Elegant nutrition grid
+            VStack(spacing: 1) {
+                // Top row: Calories (prominent)
+                if let calories = nutrition.calories {
+                    HStack {
+                        Text("Calories")
+                            .font(.system(size: 16))
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        Text("\(calories)")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.vertical, 16)
+                    .padding(.horizontal, 20)
+                    .background(Color(.systemBackground))
+                    
+                    // Separator
+                    Rectangle()
+                        .fill(Color(.separator))
+                        .frame(height: 0.5)
+                }
+                
+                // Macros in clean rows
+                VStack(spacing: 1) {
+                    if let protein = nutrition.protein {
+                        NutritionRow(label: "Protein", value: "\(protein)g")
+                    }
+                    if let carbs = nutrition.carbs {
+                        NutritionRow(label: "Carbohydrates", value: "\(carbs)g")
+                    }
+                    if let fats = nutrition.fats {
+                        NutritionRow(label: "Total Fat", value: "\(fats)g")
+                    }
+                }
+                
+                // Bottom separator and servings
+                if let portions = nutrition.portions {
+                    Rectangle()
+                        .fill(Color(.separator))
+                        .frame(height: 0.5)
+                    
+                    HStack {
+                        Text("Servings")
+                            .font(.system(size: 16))
+                            .foregroundColor(.primary)
+                        
+                        Spacer()
+                        
+                        Text("\(portions)")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.primary)
+                    }
+                    .padding(.vertical, 16)
+                    .padding(.horizontal, 20)
+                    .background(Color(.systemBackground))
+                }
+            }
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color(.separator), lineWidth: 0.5)
+            )
+        }
+        .padding(.bottom, 24)
+    }
+}
+
+struct NutritionRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 15))
+                .foregroundColor(.secondary)
+            
+            Spacer()
+            
+            Text(value)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundColor(.primary)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 20)
+        .background(Color(.systemBackground))
     }
 }
 
