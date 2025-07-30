@@ -290,10 +290,11 @@ struct Recipe: Identifiable, Codable, Hashable {
     }
     
     var displayCreatorName: String? {
-        if let name = creatorName, !name.isEmpty {
-            return name
-        } else if let handle = creatorHandle, !handle.isEmpty {
+        // Prioritize username (@handle) as it's more stable than display names
+        if let handle = creatorHandle, !handle.isEmpty {
             return handle
+        } else if let name = creatorName, !name.isEmpty {
+            return name
         }
         return nil
     }
@@ -824,49 +825,176 @@ class RecipeStore: ObservableObject {
     
     private func loadSampleData() {
         self.recipes = [
+            // Recipe 1: Chipotle Chicken with Charred Sweetcorn & Zesty Rice
             Recipe(
-                name: "Classic Spaghetti Carbonara", 
-                description: "A creamy Italian pasta dish with guanciale and pecorino romano.", 
-                imageUrl: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&q=80&w=400", 
-                prepTime: 10,
-                cookTime: 20, 
-                difficulty: .easy,
-                nutrition: Nutrition(calories: 520, protein: 22, carbs: 58, fats: 24, portions: 4),
-                ingredients: [
-                    Ingredient(name: "200g Spaghetti", category: .pastaRiceGrains),
-                    Ingredient(name: "100g Guanciale", category: .meatPoultryFish),
-                    Ingredient(name: "2 large Eggs", category: .dairy),
-                    Ingredient(name: "50g Pecorino Romano", category: .dairy),
-                    Ingredient(name: "Black Pepper", category: .herbsSpices)
-                ], 
-                isFromReel: false,
-                extractedFrom: "website",
-                creatorHandle: nil,
-                creatorName: nil,
-                steps: ["Boil spaghetti.", "Cook guanciale.", "Mix eggs and cheese.", "Combine all ingredients."]
-            ),
-            Recipe(
-                name: "Chicken Stir Fry Udon", 
-                description: "Quick and healthy udon noodle soup with fresh vegetables.", 
-                imageUrl: "https://images.unsplash.com/photo-1512058564366-18510be2db19?auto=format&fit=crop&q=80&w=400", 
+                name: "Chipotle Chicken with Charred Sweetcorn & Zesty Rice",
+                description: "A high-protein, flavor-packed meal featuring juicy chipotle chicken, smoky charred sweetcorn, and zesty rice with black beans. Perfect for meal prep or a satisfying lunch, this recipe brings together bold spices and fresh ingredients for a delicious, balanced plate.",
+                imageUrl: "https://scontent-sea1-1.cdninstagram.com/v/t51.75761-15/490219596_18002752127761551_3326422995220106638_n.jpg?stp=cmp1_dst-jpg_e35_s640x640_tt6&_nc_cat=106&ccb=1-7&_nc_sid=18de74&_nc_ohc=e4wcEFJX_1AQ7kNvwGzjosE&_nc_oc=AdnM7kNQcyRqANOh_5dsMjgAVJ-NXPtdjZ5MOqDv4OQsp0fYkX6Q_XBOqQYSS0eVD7w&_nc_zt=23&_nc_ht=scontent-sea1-1.cdninstagram.com&_nc_gid=vRQACGxnq7uvkrHjtaVX8g&oh=00_AfQGOXLnYNJRE4781NnY73xRFv82TttdfaVz0y783smLRA&oe=688FC31B",
                 prepTime: 15,
-                cookTime: 25, 
-                difficulty: .medium,
-                nutrition: Nutrition(calories: 420, protein: 28, carbs: 45, fats: 12, portions: 2),
+                cookTime: 25,
+                difficulty: .easy,
+                nutrition: Nutrition(calories: 610, protein: 50, carbs: 60, fats: 19, portions: 3),
                 ingredients: [
-                    Ingredient(name: "1 lb Chicken Breasts", category: .meatPoultryFish),
-                    Ingredient(name: "1 tbsp Soy Sauce", category: .cupboardStaples),
-                    Ingredient(name: "Bell Peppers", category: .fruitVegetables),
-                    Ingredient(name: "Carrots", category: .fruitVegetables),
-                    Ingredient(name: "Broccoli", category: .fruitVegetables),
-                    Ingredient(name: "Garlic", category: .herbsSpices),
-                    Ingredient(name: "Ginger", category: .herbsSpices)
-                ], 
+                    Ingredient(name: "600g Chicken Thigh Fillet", category: .meatPoultryFish),
+                    Ingredient(name: "1.5 tsp Paprika", category: .herbsSpices),
+                    Ingredient(name: "1 tsp Onion Powder", category: .herbsSpices),
+                    Ingredient(name: "1 tsp Garlic Powder", category: .herbsSpices),
+                    Ingredient(name: "1 tsp Cumin", category: .herbsSpices),
+                    Ingredient(name: "1/2 Lime", category: .fruitVegetables),
+                    Ingredient(name: "2 tbsp Chipotle Sauce", category: .cannedJarred),
+                    Ingredient(name: "1 tbsp Olive Oil", category: .cupboardStaples),
+                    Ingredient(name: "140g Sweetcorn Kernels", category: .fruitVegetables),
+                    Ingredient(name: "1 tbsp Salted Butter", category: .dairy),
+                    Ingredient(name: "1/3 Red Onion, finely chopped", category: .fruitVegetables),
+                    Ingredient(name: "Few sprigs of Coriander, chopped", category: .herbsSpices),
+                    Ingredient(name: "225g Uncooked Long Grain Rice", category: .pastaRiceGrains),
+                    Ingredient(name: "200g Black Beans, drained and rinsed", category: .cannedJarred),
+                    Ingredient(name: "3 tbsp Sour Cream", category: .dairy)
+                ],
                 isFromReel: true,
                 extractedFrom: "instagram",
-                creatorHandle: "@healthy_chef",
-                creatorName: "Chef Maria",
-                steps: ["Marinate chicken.", "Stir-fry chicken.", "Add veggies.", "Add sauce and serve."]
+                creatorHandle: "@foodinfivemins",
+                creatorName: "Food In 5 | Bill",
+                steps: [
+                    "In a large bowl, combine chicken thigh fillets with 1.5 tsp paprika, 1 tsp onion powder, 1 tsp garlic powder, 1 tsp cumin, juice of 1/2 lime, 2 tbsp chipotle sauce, and 1 tbsp olive oil. Mix well to coat the chicken evenly. Marinate for at least 10 minutes.",
+                    "While the chicken marinates, cook the rice according to package instructions. Once cooked, fluff with a fork and set aside.",
+                    "Heat a large skillet or grill pan over medium-high heat. Add the marinated chicken and cook for 5-7 minutes per side, or until cooked through and slightly charred. Remove from the pan and let rest for a few minutes before slicing.",
+                    "In the same pan, add 1 tbsp salted butter. Once melted, add sweetcorn kernels and cook for 3-4 minutes until slightly charred.",
+                    "Add 1/2 tsp paprika, 1 tsp chipotle sauce, juice of 1/2 lime, and 1/3 finely chopped red onion to the sweetcorn. Stir well and cook for another 1-2 minutes. Remove from heat and stir in a few sprigs of chopped coriander.",
+                    "To the cooked rice, add 200g black beans, juice of 1/2 lime, and a few sprigs of chopped coriander. Mix gently to combine.",
+                    "To serve, divide the zesty rice and black beans between three bowls. Top each with sliced chipotle chicken and a generous spoonful of charred sweetcorn.",
+                    "Finish each bowl with 1 tbsp sour cream. Garnish with extra coriander and lime wedges if desired."
+                ]
+            ),
+            
+            // Recipe 2: Black Pepper Chicken Meal Prep
+            Recipe(
+                name: "Black Pepper Chicken Meal Prep",
+                description: "A high-protein, flavorful black pepper chicken stir-fry with colorful peppers and a savory sauce, perfect for meal prep. This easy recipe is ideal for healthy lunches or dinners and comes together quickly for three hearty servings.",
+                imageUrl: "https://scontent-sea1-1.cdninstagram.com/v/t51.71878-15/502493486_670602509126939_5722353919325014122_n.jpg?stp=cmp1_dst-jpg_e35_s640x640_tt6&_nc_cat=102&ccb=1-7&_nc_sid=18de74&_nc_ohc=DYU6NAvQ4GoQ7kNvwET5o86&_nc_oc=AdkJPozeOy9O8EfN0g-5S1EQTf-mbvJgoEhv9UIBVVYKWDLcY2eDYfVTTXX0OFaULWY&_nc_zt=23&_nc_ht=scontent-sea1-1.cdninstagram.com&_nc_gid=vBz2r59Em5rY7fTrXM7ABw&oh=00_AfSlrgu_-ubgVcB_spak78JkDz-MhTNwFVVcvA5FE_Hu4Q&oe=688FB903",
+                prepTime: 15,
+                cookTime: 20,
+                difficulty: .easy,
+                nutrition: Nutrition(calories: 623, protein: 46, carbs: 82, fats: 12, portions: 3),
+                ingredients: [
+                    Ingredient(name: "600g Chicken Thigh Fillets", category: .meatPoultryFish),
+                    Ingredient(name: "2 Cloves of Garlic", category: .fruitVegetables),
+                    Ingredient(name: "1/2 Onion", category: .fruitVegetables),
+                    Ingredient(name: "1 Red Pepper", category: .fruitVegetables),
+                    Ingredient(name: "1 Green Pepper", category: .fruitVegetables),
+                    Ingredient(name: "100ml Chicken Stock", category: .cannedJarred),
+                    Ingredient(name: "2 Tbsp Honey", category: .cupboardStaples),
+                    Ingredient(name: "3 Tbsp Oyster Sauce", category: .cannedJarred),
+                    Ingredient(name: "1 Heaped Tsp Ground Black Pepper", category: .herbsSpices),
+                    Ingredient(name: "1 Fresh Chilli", category: .fruitVegetables),
+                    Ingredient(name: "2 Spring Onion", category: .fruitVegetables),
+                    Ingredient(name: "1 Tbsp Rice Vinegar", category: .cupboardStaples),
+                    Ingredient(name: "1 Tbsp Sesame Oil", category: .cupboardStaples),
+                    Ingredient(name: "1 Tbsp Dark Soy Sauce", category: .cupboardStaples),
+                    Ingredient(name: "250g Uncooked Rice", category: .pastaRiceGrains)
+                ],
+                isFromReel: true,
+                extractedFrom: "instagram",
+                creatorHandle: "@foodinfivemins",
+                creatorName: "Food In 5 | Bill",
+                steps: [
+                    "Cook the rice according to package instructions. Set aside and keep warm.",
+                    "Slice the chicken thigh fillets into bite-sized pieces.",
+                    "Finely chop the garlic, onion, and fresh chilli. Slice the red and green peppers and spring onions.",
+                    "Heat the sesame oil in a large pan or wok over medium-high heat.",
+                    "Add the chicken pieces and cook until browned and cooked through. Remove and set aside.",
+                    "In the same pan, add the chopped garlic, onion, and chilli. Stir-fry for 1-2 minutes until fragrant.",
+                    "Add the sliced red and green peppers. Stir-fry for another 2-3 minutes until slightly softened.",
+                    "Return the chicken to the pan. Add the oyster sauce, honey, dark soy sauce, rice vinegar, ground black pepper, and chicken stock.",
+                    "Stir everything together and let it simmer for 3-5 minutes until the sauce thickens slightly and coats the chicken and vegetables.",
+                    "Add the sliced spring onions and stir through.",
+                    "Serve the black pepper chicken over the cooked rice. Divide into 3 meal prep containers if desired."
+                ]
+            ),
+            
+            // Recipe 3: High Protein Chicken Mince Stir Fry
+            Recipe(
+                name: "High Protein Chicken Mince Stir Fry",
+                description: "A quick, high-protein chicken mince stir fry loaded with fresh vegetables and bold Asian flavors. Perfect for meal prep or a healthy family dinner, this dish is packed with protein and balanced macros.",
+                imageUrl: "https://scontent-sea5-1.cdninstagram.com/v/t51.75761-15/489333370_18002136248761551_4361426156949198907_n.jpg?stp=cmp1_dst-jpg_e35_s640x640_tt6&_nc_cat=109&ccb=1-7&_nc_sid=18de74&_nc_ohc=xqZGh_yBCqEQ7kNvwG8L3fH&_nc_oc=AdmHiFFHigYz6FPMhAHgsXIxSWIyAGAAHMxXKSPTYGAeDMwGM4gztJA9ERWSDpoiJ1Y&_nc_zt=23&_nc_ht=scontent-sea5-1.cdninstagram.com&_nc_gid=dV7aSptBR1fWElQOSeausw&oh=00_AfT06Mp1c7pSGFN6uKKeVrAk10-KmbG2fhNjtKApIPxxdg&oe=688FD05E",
+                prepTime: 10,
+                cookTime: 15,
+                difficulty: .easy,
+                nutrition: Nutrition(calories: 522, protein: 40, carbs: 57, fats: 15, portions: 3),
+                ingredients: [
+                    Ingredient(name: "500g Chicken Mince", category: .meatPoultryFish),
+                    Ingredient(name: "1 tsp Chinese 5 Spice", category: .herbsSpices),
+                    Ingredient(name: "2 cloves of garlic", category: .fruitVegetables),
+                    Ingredient(name: "1/2 red onion", category: .fruitVegetables),
+                    Ingredient(name: "2 tbsp sesame oil", category: .cupboardStaples),
+                    Ingredient(name: "2 tbsp light soy sauce", category: .cupboardStaples),
+                    Ingredient(name: "2 tbsp rice wine vinegar", category: .cupboardStaples),
+                    Ingredient(name: "3 tbsp honey", category: .cupboardStaples),
+                    Ingredient(name: "1 spring onion", category: .fruitVegetables),
+                    Ingredient(name: "3 small chillis", category: .fruitVegetables),
+                    Ingredient(name: "300g green beans", category: .fruitVegetables),
+                    Ingredient(name: "1 tbsp black & white sesame seeds", category: .herbsSpices),
+                    Ingredient(name: "275g uncooked long grain rice", category: .pastaRiceGrains)
+                ],
+                isFromReel: true,
+                extractedFrom: "instagram",
+                creatorHandle: "@foodinfivemins",
+                creatorName: "Food In 5 | Bill",
+                steps: [
+                    "Cook the long grain rice according to package instructions. Set aside and keep warm.",
+                    "Finely chop the garlic, red onion, spring onion, and chillis.",
+                    "Trim and cut the green beans into bite-sized pieces.",
+                    "Heat 1 tablespoon of sesame oil in a large pan or wok over medium-high heat.",
+                    "Add the chopped garlic, red onion, and chillis. Stir fry for 1-2 minutes until fragrant.",
+                    "Add the chicken mince and Chinese 5 spice. Cook, breaking up the mince, until browned and cooked through.",
+                    "Add the green beans and continue to stir fry for 3-4 minutes until just tender.",
+                    "In a small bowl, mix together the light soy sauce, rice wine vinegar, and 2 tablespoons of honey.",
+                    "Pour the sauce over the chicken and vegetables. Stir well to coat and cook for another 2 minutes.",
+                    "Drizzle in the remaining 1 tablespoon of sesame oil and toss to combine.",
+                    "Serve the stir fry over cooked rice.",
+                    "Garnish with sliced spring onion, a sprinkle of black & white sesame seeds, and an extra drizzle of honey if desired."
+                ]
+            ),
+            
+            // Recipe 4: Sticky Ginger Chicken with Chilli Bok Choy and Rice
+            Recipe(
+                name: "Sticky Ginger Chicken with Chilli Bok Choy and Rice",
+                description: "A high-protein, flavorful dish featuring tender sticky ginger chicken, spicy bok choy, and fluffy long grain rice. Perfect for a healthy and satisfying dinner for two.",
+                imageUrl: "https://scontent-sea1-1.cdninstagram.com/v/t51.75761-15/491417745_18003173894761551_3511441692636108695_n.jpg?stp=cmp1_dst-jpg_e35_s640x640_tt6&_nc_cat=104&ccb=1-7&_nc_sid=18de74&_nc_ohc=BDlSJXlOB6IQ7kNvwH8WNjD&_nc_oc=AdmcD61kOoS88oiRjDgAMAKFotSuiFxVmWSdYrg0aAPKnJ1BpQ81KtMlI76N1k3IbKU&_nc_zt=23&_nc_ht=scontent-sea1-1.cdninstagram.com&_nc_gid=hPofMcusyIWk8pCDVqGWoQ&oh=00_AfS7rJHgVuXD_PPM0nMJFQJWrlA4fbxRXvYghB0wxTrODQ&oe=688FCA5F",
+                prepTime: 15,
+                cookTime: 20,
+                difficulty: .easy,
+                nutrition: Nutrition(calories: 609, protein: 45, carbs: 74, fats: 15, portions: 2),
+                ingredients: [
+                    Ingredient(name: "400g Chicken Fillet Thigh", category: .meatPoultryFish),
+                    Ingredient(name: "3cm Fresh Ginger", category: .fruitVegetables),
+                    Ingredient(name: "3 Cloves of Garlic", category: .fruitVegetables),
+                    Ingredient(name: "1 Tsp Chilli Flakes", category: .herbsSpices),
+                    Ingredient(name: "2 Tbsp Honey", category: .cupboardStaples),
+                    Ingredient(name: "1 Tbsp Dark Soy Sauce", category: .cupboardStaples),
+                    Ingredient(name: "1 Tbsp Sesame Seeds", category: .herbsSpices),
+                    Ingredient(name: "2 Spring Onions", category: .fruitVegetables),
+                    Ingredient(name: "2 Clusters of Bok Choy", category: .fruitVegetables),
+                    Ingredient(name: "1 Fresh Chilli", category: .fruitVegetables),
+                    Ingredient(name: "1 Tbsp Sesame Oil", category: .cupboardStaples),
+                    Ingredient(name: "1 Tsp Soy Sauce", category: .cupboardStaples),
+                    Ingredient(name: "150g Uncooked Long Grain Rice", category: .pastaRiceGrains)
+                ],
+                isFromReel: true,
+                extractedFrom: "instagram",
+                creatorHandle: "@foodinfivemins",
+                creatorName: "Food In 5 | Bill",
+                steps: [
+                    "Cook the long grain rice according to package instructions. Set aside and keep warm.",
+                    "Peel and finely grate the fresh ginger. Mince 2 cloves of garlic for the chicken and 1 clove for the bok choy. Slice the spring onions and fresh chilli.",
+                    "Cut the chicken thigh fillets into bite-sized pieces.",
+                    "In a bowl, combine the chicken pieces with grated ginger, 2 minced garlic cloves, chilli flakes, honey, and dark soy sauce. Mix well to coat the chicken.",
+                    "Heat a non-stick pan over medium-high heat. Add the marinated chicken and cook for 8-10 minutes, stirring occasionally, until the chicken is cooked through and the sauce is sticky.",
+                    "Sprinkle sesame seeds over the chicken and toss to coat. Add sliced spring onions and cook for another minute. Remove from heat and set aside.",
+                    "While the chicken cooks, heat sesame oil in another pan over medium heat. Add the remaining minced garlic and sliced fresh chilli, sauté for 1 minute.",
+                    "Add the bok choy clusters to the pan and stir-fry for 2-3 minutes until just wilted. Drizzle with 1 tsp soy sauce and toss to combine.",
+                    "To serve, divide the cooked rice between two plates. Top with sticky ginger chicken and serve the chilli bok choy on the side."
+                ]
             )
         ]
         if let firstRecipe = self.recipes.first {
@@ -1527,17 +1655,35 @@ struct CollectionDetailView: View {
 
 struct RecipeDetailView: View {
     let recipe: Recipe
+    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                AsyncImage(url: URL(string: recipe.imageUrl)) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    RecipeImagePlaceholder(isFromReel: recipe.isFromReel)
+                ZStack(alignment: .topLeading) {
+                    AsyncImage(url: URL(string: recipe.imageUrl)) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        RecipeImagePlaceholder(isFromReel: recipe.isFromReel)
+                    }
+                    .frame(height: 250)
+                    .clipped()
+                    
+                    // Custom back button with better visibility
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color.black.opacity(0.6))
+                            .clipShape(Circle())
+                            .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
+                    }
+                    .padding(.top, 50) // Account for status bar
+                    .padding(.leading, 16)
                 }
-                .frame(height: 250)
-                .clipped()
                 
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 12) {
@@ -1613,7 +1759,7 @@ struct RecipeDetailView: View {
                 .padding()
             }
         }
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarHidden(true)
         .ignoresSafeArea(edges: .top)
     }
 }

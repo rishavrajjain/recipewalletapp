@@ -50,6 +50,7 @@ struct InstructionsView: View {
                     .shadow(color: Color.black.opacity(0.1), radius: 4, x: 0, y: 2)
                 }
             }
+            .padding(.bottom, 100) // Extra padding to account for custom tab bar
         }
         .sheet(isPresented: $showPremiumSheet) {
             PremiumFeatureSheet()
