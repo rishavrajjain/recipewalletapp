@@ -601,11 +601,28 @@ class RecipeStore: ObservableObject {
     
     init() {
         loadData()
-        if recipes.isEmpty && collections.isEmpty {
+        
+        // Clean up old data structure
+        cleanupOldCollections()
+        
+        if recipes.isEmpty {
             loadSampleData()
+        } else {
+            // If we have existing recipes but no High Protein Meal Preps collection, create it
+            ensureMealPrepsCollectionExists()
         }
-        ensureFavoritesCollectionExists()
         filterRecipes()
+    }
+    
+    private func cleanupOldCollections() {
+        // Remove any old "Favorites" collections
+        collections.removeAll { $0.name == "Favorites" }
+        
+        // If we have recipes but the High Protein Meal Preps collection is empty, fix it
+        if let mealPrepsIndex = collections.firstIndex(where: { $0.name == "High Protein Meal Preps" }),
+           collections[mealPrepsIndex].recipeIDs.isEmpty && !recipes.isEmpty {
+            collections[mealPrepsIndex].recipeIDs = recipes.map { $0.id }
+        }
     }
     
     // MARK: Collection Management
@@ -616,15 +633,19 @@ class RecipeStore: ObservableObject {
     }
     
     func deleteCollection(_ collection: Collection) {
-        // Prevent the protected "Favorites" collection from being deleted
-        guard collection.name != "Favorites" else { return }
+        // Prevent the protected "High Protein Meal Preps" collection from being deleted
+        guard collection.name != "High Protein Meal Preps" else { return }
         collections.removeAll { $0.id == collection.id }
     }
     
-    private func ensureFavoritesCollectionExists() {
-        if !collections.contains(where: { $0.name == "Favorites" }) {
-            let favorites = Collection(name: "Favorites")
-            collections.append(favorites)
+    private func ensureMealPrepsCollectionExists() {
+        if !collections.contains(where: { $0.name == "High Protein Meal Preps" }) {
+            // Create High Protein Meal Preps collection with all existing recipes
+            let mealPreps = Collection(
+                name: "High Protein Meal Preps",
+                recipeIDs: recipes.map { $0.id }
+            )
+            collections.append(mealPreps)
         }
     }
     
@@ -997,11 +1018,12 @@ class RecipeStore: ObservableObject {
                 ]
             )
         ]
-        if let firstRecipe = self.recipes.first {
-            self.collections = [
-                Collection(name: "Favorites")
-            ]
-        }
+        // Create High Protein Meal Preps collection with all recipes
+        let mealPrepsCollection = Collection(
+            name: "High Protein Meal Preps",
+            recipeIDs: self.recipes.map { $0.id }
+        )
+        self.collections = [mealPrepsCollection]
     }
 }
 
@@ -2342,7 +2364,7 @@ struct CollectionCard: View {
             .frame(width: 160, height: 100)
             
             // Menu overlay (top right)
-            if collection.name != "Favorites" {
+            if collection.name != "High Protein Meal Preps" {
                 VStack {
                     HStack {
                         Spacer()

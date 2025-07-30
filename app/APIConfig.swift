@@ -9,7 +9,7 @@ enum APIEnvironment {
 /// Global API configuration
 struct APIConfig {
     /// Change this when you need to switch
-    static var environment: APIEnvironment = .local
+    static var environment: APIEnvironment = .production
     
     /// Base URL resolved from the current environment
     static var baseURL: URL {
