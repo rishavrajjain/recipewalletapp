@@ -453,6 +453,30 @@ private struct APIRecipe: Decodable {
 }
 
 class RecipeAPIService {
+    func wakeUpServer() async {
+        do {
+            let healthURL = APIConfig.endpoint("health")
+            print("🚀 HEALTH_CHECK: Waking up server at \(healthURL)")
+            
+            var request = URLRequest(url: healthURL)
+            request.httpMethod = "GET"
+            request.timeoutInterval = 10 // Short timeout for health check
+            
+            let (data, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse {
+                print("🚀 HEALTH_CHECK: Server responded with status \(httpResponse.statusCode)")
+                
+                if let responseString = String(data: data, encoding: .utf8) {
+                    print("🚀 HEALTH_CHECK: Response: \(responseString)")
+                }
+            }
+        } catch {
+            print("⚠️ HEALTH_CHECK: Failed to wake up server: \(error.localizedDescription)")
+            // Don't throw error - this is just a wake-up call, not critical
+        }
+    }
+    
     func importRecipeFromReel(reelURL: String) async throws -> Recipe {
         print("🚀 IMPORT: Starting recipe import from URL: \(reelURL)")
         
@@ -465,7 +489,7 @@ class RecipeAPIService {
         request.timeoutInterval = 90
         
         do {
-            request.httpBody = try JSONEncoder().encode(["link": reelURL])
+        request.httpBody = try JSONEncoder().encode(["link": reelURL])
             print("🚀 IMPORT: Request body created successfully")
         } catch {
             print("❌ IMPORT: Failed to encode request body: \(error)")
@@ -501,7 +525,7 @@ class RecipeAPIService {
                     throw APIError.serverError("Failed to extract a valid recipe from the provided link. The content may not be a recipe or the website is not supported.")
                 }
             } else {
-                throw APIError.serverError("Server connection failed. Please try again.")
+            throw APIError.serverError("Server connection failed. Please try again.")
             }
         }
         
@@ -510,7 +534,7 @@ class RecipeAPIService {
         
         do {
             print("🚀 IMPORT: Attempting to decode API response...")
-            let apiResponse = try decoder.decode(APIResponse.self, from: data)
+        let apiResponse = try decoder.decode(APIResponse.self, from: data)
             print("🚀 IMPORT: API Response decoded - Success: \(apiResponse.success)")
             
             if let source = apiResponse.source {
@@ -520,8 +544,8 @@ class RecipeAPIService {
             if let error = apiResponse.error {
                 print("🚀 IMPORT: API returned error: \(error)")
             }
-            
-            guard apiResponse.success, let apiRecipe = apiResponse.recipe else {
+        
+        guard apiResponse.success, let apiRecipe = apiResponse.recipe else {
                 let errorMsg = apiResponse.error ?? "Could not extract a recipe from the link."
                 print("❌ IMPORT: API failed: \(errorMsg)")
                 throw APIError.serverError(errorMsg)
@@ -789,7 +813,7 @@ class RecipeStore: ObservableObject {
         if let recipesData = UserDefaults.standard.data(forKey: recipesKey) {
             do {
                 let decodedRecipes = try decoder.decode([Recipe].self, from: recipesData)
-                self.recipes = decodedRecipes
+            self.recipes = decodedRecipes
             } catch {
                 print("⚠️ Failed to load recipes with new format, clearing old data: \(error)")
                 // Clear old incompatible data and start fresh
@@ -802,7 +826,7 @@ class RecipeStore: ObservableObject {
         if let collectionsData = UserDefaults.standard.data(forKey: collectionsKey) {
             do {
                 let decodedCollections = try decoder.decode([Collection].self, from: collectionsData)
-                self.collections = decodedCollections
+            self.collections = decodedCollections
             } catch {
                 print("⚠️ Failed to load collections, clearing old data: \(error)")
                 UserDefaults.standard.removeObject(forKey: collectionsKey)
@@ -1041,9 +1065,9 @@ struct TabBarView: View {
             Group {
                 switch selectedTab {
                 case 0:
-                    NavigationView {
-                        HomeView()
-                    }
+        NavigationView {
+            HomeView()
+        }
                 case 1:
                     ImportTabView()
                 case 2:
@@ -1483,10 +1507,16 @@ struct ContentView: View {
     // Force light mode flag - set to true to always use light mode
     private let forceAlwaysLightMode = true
     
-    var body: some View {
+        var body: some View {
         TabBarView()
             .environmentObject(recipeStore)
             .preferredColorScheme(forceAlwaysLightMode ? .light : nil)
+            .onAppear {
+                // Wake up the server on app launch
+                Task {
+                    await RecipeAPIService().wakeUpServer()
+                }
+            }
     }
 }
 
@@ -1675,6 +1705,41 @@ struct CollectionDetailView: View {
     }
 }
 
+struct RecipeInfoCard: View {
+    let icon: String
+    let title: String
+    let value: String
+    let color: Color
+    
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 20, weight: .medium))
+                .foregroundColor(color)
+                .frame(width: 32, height: 32)
+                .background(color.opacity(0.1))
+                .clipShape(Circle())
+            
+            VStack(spacing: 2) {
+                Text(title)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                
+                Text(value)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.primary)
+                    .lineLimit(1)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+    }
+}
+
 struct RecipeDetailView: View {
     let recipe: Recipe
     @Environment(\.dismiss) private var dismiss
@@ -1683,13 +1748,18 @@ struct RecipeDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
-                    AsyncImage(url: URL(string: recipe.imageUrl)) { image in
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        RecipeImagePlaceholder(isFromReel: recipe.isFromReel)
+                    Button(action: {
+                        openOriginalSource()
+                    }) {
+                AsyncImage(url: URL(string: recipe.imageUrl)) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RecipeImagePlaceholder(isFromReel: recipe.isFromReel)
+                }
+                .frame(height: 250)
+                .clipped()
                     }
-                    .frame(height: 250)
-                    .clipped()
+                    .buttonStyle(.plain)
                     
                     // Custom back button with better visibility
                     Button(action: {
@@ -1711,41 +1781,49 @@ struct RecipeDetailView: View {
                     VStack(alignment: .leading, spacing: 12) {
                         Text(recipe.name).font(.largeTitle).fontWeight(.bold)
                         
-                        // Timing and Difficulty Row
-                        HStack(spacing: 16) {
+                        // Recipe Info Grid (2x2 layout)
+                        LazyVGrid(columns: [
+                            GridItem(.flexible(), spacing: 8),
+                            GridItem(.flexible(), spacing: 8)
+                        ], spacing: 12) {
+                            // Prep Time
                             if let prepTime = recipe.prepTime {
-                                Label("\(prepTime) min prep", systemImage: "timer")
+                                RecipeInfoCard(
+                                    icon: "timer",
+                                    title: "Prep Time",
+                                    value: "\(prepTime) min",
+                                    color: .orange
+                                )
                             }
-                            Label("\(recipe.cookTime) min cook", systemImage: "flame")
                             
+                            // Cook Time
+                            RecipeInfoCard(
+                                icon: "flame",
+                                title: "Cook Time", 
+                                value: "\(recipe.cookTime) min",
+                                color: .red
+                            )
+                            
+                            // Difficulty
                             if let difficulty = recipe.difficulty {
-                                HStack(spacing: 4) {
-                                    Image(systemName: difficulty.iconName)
-                                        .foregroundColor(difficulty.color)
-                                    Text(difficulty.displayName)
-                                        .foregroundColor(difficulty.color)
-                                }
-                                .font(.caption.bold())
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(difficulty.color.opacity(0.1))
-                                .cornerRadius(8)
+                                RecipeInfoCard(
+                                    icon: difficulty.iconName,
+                                    title: "Difficulty",
+                                    value: difficulty.displayName,
+                                    color: difficulty.color
+                                )
                             }
                             
+                            // Platform Source
                             if recipe.isFromReel && recipe.extractedFrom != nil && recipe.platformDisplayName != "Unknown" {
-                                HStack(spacing: 4) {
-                                    Image(systemName: recipe.platformIcon)
-                                    Text(recipe.platformDisplayName)
-                                }
-                                .font(.caption.bold())
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.black.cornerRadius(8))
+                                RecipeInfoCard(
+                                    icon: recipe.platformIcon,
+                                    title: "Source",
+                                    value: recipe.platformDisplayName,
+                                    color: .black
+                                )
                             }
                         }
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
                         
                         if !recipe.description.isEmpty {
                             Text(recipe.description)
@@ -1783,6 +1861,60 @@ struct RecipeDetailView: View {
         }
         .navigationBarHidden(true)
         .ignoresSafeArea(edges: .top)
+        .gesture(
+            DragGesture()
+                .onEnded { value in
+                    // Swipe right to go back
+                    if value.translation.width > 100 && abs(value.translation.height) < 50 {
+                        dismiss()
+                    }
+                }
+        )
+    }
+    
+    private func openOriginalSource() {
+        guard recipe.isFromReel, let extractedFrom = recipe.extractedFrom else { return }
+        
+        // Try to construct the original URL
+        let originalURL: String
+        switch extractedFrom.lowercased() {
+        case "instagram":
+            // Try to open Instagram app, fallback to web
+            if let instagramURL = URL(string: "instagram://media?id=\(recipe.id)"),
+               UIApplication.shared.canOpenURL(instagramURL) {
+                UIApplication.shared.open(instagramURL)
+                return
+            }
+            // Fallback to web - we'd need the original URL stored
+            originalURL = "https://instagram.com"
+            
+        case "tiktok":
+            // Try to open TikTok app, fallback to web
+            if let tiktokURL = URL(string: "tiktok://"),
+               UIApplication.shared.canOpenURL(tiktokURL) {
+                UIApplication.shared.open(tiktokURL)
+                return
+            }
+            originalURL = "https://tiktok.com"
+            
+        case "youtube":
+            // Try to open YouTube app, fallback to web
+            if let youtubeURL = URL(string: "youtube://"),
+               UIApplication.shared.canOpenURL(youtubeURL) {
+                UIApplication.shared.open(youtubeURL)
+                return
+            }
+            originalURL = "https://youtube.com"
+            
+        default:
+            // For websites, just open in Safari
+            originalURL = "https://google.com/search?q=\(recipe.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+        }
+        
+        // Open fallback URL in Safari
+        if let url = URL(string: originalURL) {
+            UIApplication.shared.open(url)
+        }
     }
 }
 
@@ -2219,9 +2351,9 @@ struct RecipeCard: View {
                             .font(.caption)
                             .foregroundColor(.secondary)
                     } else {
-                        Label("\(recipe.cookTime) min", systemImage: "clock")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                Label("\(recipe.cookTime) min", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                     }
                     
                     if let difficulty = recipe.difficulty {
@@ -2341,9 +2473,9 @@ struct CollectionCard: View {
                 
                 // Bottom row with recipe count and share button
                 HStack {
-                    Label("\(recipeCount) \(recipeCount == 1 ? "recipe" : "recipes")", systemImage: "tray.fill")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                Label("\(recipeCount) \(recipeCount == 1 ? "recipe" : "recipes")", systemImage: "tray.fill")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                     
                     Spacer()
                     
@@ -2687,7 +2819,7 @@ struct LinkInputContent: View {
             
             // Tips Section
             VStack(spacing: 16) {
-                Text("Quick Tips")
+                    Text("Quick Tips")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.black)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -2702,8 +2834,8 @@ struct LinkInputContent: View {
                     
                     TipRow(icon: "wand.and.stars",
                            text: "AI extracts ingredients & instructions")
-                }
-                .padding(20)
+            }
+            .padding(20)
                 .background(Color(.systemGray6))
                 .cornerRadius(16)
             }

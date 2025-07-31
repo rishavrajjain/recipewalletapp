@@ -414,7 +414,7 @@ struct HealthReport: View {
     
     var body: some View {
         Button(action: analyzeHealth) {
-            ZStack {
+        ZStack {
                 // Pure black background - Apple style
                 RoundedRectangle(cornerRadius: 16)
                     .fill(Color.black)
@@ -426,7 +426,7 @@ struct HealthReport: View {
                     .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
                     .frame(height: 88)
             
-                HStack(spacing: 16) {
+            HStack(spacing: 16) {
                     // Clean, minimal icon
                     Image(systemName: isLoading ? "brain.head.profile" : "heart.text.square.fill")
                         .font(.system(size: 22, weight: .medium))
@@ -436,7 +436,7 @@ struct HealthReport: View {
                         .clipShape(RoundedRectangle(cornerRadius: 12))
                         .symbolEffect(.pulse, isActive: isLoading)
                 
-                                    VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 4) {
                         Text("AI Health Analysis")
                             .font(.system(size: 17, weight: .medium))
                             .foregroundColor(.white)
@@ -458,8 +458,8 @@ struct HealthReport: View {
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.white.opacity(0.4))
                 }
-                }
-                .padding(.horizontal, 20)
+            }
+            .padding(.horizontal, 20)
                 .padding(.vertical, 22)
             }
         }
@@ -519,8 +519,8 @@ struct HealthAnalysisDetailView: View {
     
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 32) {
+        ScrollView {
+            VStack(spacing: 32) {
                     // Hero Score Section
                     heroScoreSection
                     
