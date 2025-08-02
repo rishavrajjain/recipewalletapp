@@ -15,9 +15,15 @@ struct ShoppingListView: View {
             item.category
         }
         
-        // Sort categories: items with categories first (sorted by category name), then items without categories
+        // Sort categories: "My Ingredients" first, then other categories alphabetically, then nil
         return grouped.sorted { first, second in
             switch (first.key, second.key) {
+            case (.myIngredients, .myIngredients):
+                return false // Both myIngredients, maintain order
+            case (.myIngredients, _):
+                return true // myIngredients always goes first
+            case (_, .myIngredients):
+                return false // myIngredients always goes first
             case (nil, nil):
                 return false // Both nil, maintain order
             case (nil, _):
@@ -36,6 +42,36 @@ struct ShoppingListView: View {
                                 if recipeStore.shoppingList.isEmpty {
                     // Designer Empty State
                     VStack(spacing: 0) {
+                        // Add new item field (when empty state)
+                        if showingAddField {
+                            VStack(spacing: 0) {
+                                HStack(spacing: 12) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.system(size: 20, weight: .medium))
+                                        .foregroundColor(.black)
+                                    
+                                    TextField("Add item", text: $newItemText)
+                                        .focused($isAddFieldFocused)
+                                        .font(.system(size: 16, weight: .medium))
+                                        .onSubmit {
+                                            addNewItem()
+                                        }
+                                        .submitLabel(.done)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemBackground))
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color(.separator), lineWidth: 0.5)
+                                )
+                                .padding(.horizontal, 20)
+                                .padding(.top, 20)
+                                .padding(.bottom, 16)
+                            }
+                        }
+                        
                         Spacer()
                         
                         // Main elevated card
@@ -43,12 +79,12 @@ struct ShoppingListView: View {
                             // Icon with subtle background
                             ZStack {
                                 Circle()
-                                    .fill(Color(red: 1.0, green: 0.85, blue: 0.1).opacity(0.15))
+                                    .fill(Color.yellow.opacity(0.15))
                                     .frame(width: 80, height: 80)
                                 
                                 Image(systemName: "cart")
                                     .font(.system(size: 32, weight: .medium))
-                                    .foregroundColor(Color(red: 0.15, green: 0.4, blue: 0.2))
+                                    .foregroundColor(.green)
                             }
                             
                             VStack(spacing: 12) {
@@ -70,8 +106,6 @@ struct ShoppingListView: View {
                         .cornerRadius(16)
                         .shadow(color: .black.opacity(0.08), radius: 12, x: 0, y: 4)
                         .padding(.horizontal, 20)
-                        
-                        
                         
                         Spacer()
                         Spacer() // Extra spacer to center better
@@ -271,7 +305,7 @@ struct ShoppingListView: View {
         }
         
         if !existsAlready {
-            let newItem = ShoppingListItem(name: trimmedText, fromRecipe: nil)
+            let newItem = ShoppingListItem(name: trimmedText, category: .myIngredients, fromRecipe: nil)
             recipeStore.shoppingList.insert(newItem, at: 0)
             
             // Haptic feedback

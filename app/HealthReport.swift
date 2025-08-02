@@ -335,8 +335,6 @@ actor HealthAnalysisAPI {
         encoder.dateEncodingStrategy = .iso8601
         request.httpBody = try encoder.encode(requestBody)
         
-        let backendRecipe = BackendRecipe(from: recipe)
-        
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {

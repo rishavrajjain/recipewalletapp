@@ -25,6 +25,7 @@ extension Notification.Name {
 
 // MARK: - Ingredient Categories
 enum IngredientCategory: String, CaseIterable, Codable {
+    case myIngredients = "My Ingredients"
     case fruitVegetables = "Fruit & Vegetables"
     case meatPoultryFish = "Meat, Poultry, Fish"
     case pastaRiceGrains = "Pasta, Rice & Grains"
@@ -40,9 +41,10 @@ enum IngredientCategory: String, CaseIterable, Codable {
     
     var iconName: String {
         switch self {
+        case .myIngredients: return "plus.circle.fill"
         case .fruitVegetables: return "leaf.fill"
         case .meatPoultryFish: return "fish.fill"
-        case .pastaRiceGrains: return "grain.fill"
+        case .pastaRiceGrains: return "fork.knife"
         case .herbsSpices: return "sparkles"
         case .cupboardStaples: return "cabinet.fill"
         case .dairy: return "drop.fill"
@@ -53,6 +55,7 @@ enum IngredientCategory: String, CaseIterable, Codable {
     
     var color: Color {
         switch self {
+        case .myIngredients: return .black
         case .fruitVegetables: return .green
         case .meatPoultryFish: return .red
         case .pastaRiceGrains: return .orange
@@ -449,7 +452,7 @@ class RecipeAPIService {
             request.httpMethod = "GET"
             request.timeoutInterval = 10 // Short timeout for health check
             
-            let (data, response) = try await URLSession.shared.data(for: request)
+            let (_, _) = try await URLSession.shared.data(for: request)
             
         } catch {
             // Don't throw error - this is just a wake-up call, not critical
@@ -477,8 +480,6 @@ class RecipeAPIService {
         }
         
         guard httpResponse.statusCode == 200 else {
-            let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown server error"
-            
             // Handle specific error responses from the new universal importer
             if httpResponse.statusCode == 500 {
                 // Try to parse the error detail from the response
@@ -549,6 +550,7 @@ class RecipeStore: ObservableObject {
     @Published var importError: (isPresented: Bool, message: String) = (false, "")
     @Published var loadingRecipeName = ""
     @Published var shouldDismissToHome = false
+    @Published var isFirstTimeUser = true
     
     private let apiService = RecipeAPIService()
     private var importTask: Task<Recipe, Error>?
@@ -557,9 +559,13 @@ class RecipeStore: ObservableObject {
     private let recipesKey = "userRecipes"
     private let collectionsKey = "userCollections"
     private let shoppingListKey = "userShoppingList"
+    private let firstTimeUserKey = "isFirstTimeUser"
     
     init() {
         loadData()
+        
+        // Check if this is the first time user
+        self.isFirstTimeUser = !UserDefaults.standard.bool(forKey: firstTimeUserKey)
         
         // Clean up old data structure
         cleanupOldCollections()
@@ -639,6 +645,11 @@ class RecipeStore: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
             self.shouldDismissToHome = false
         }
+    }
+    
+    func markFirstImportCompleted() {
+        isFirstTimeUser = false
+        UserDefaults.standard.set(true, forKey: firstTimeUserKey)
     }
     
     // MARK: Recipe Management
@@ -1052,6 +1063,7 @@ struct CustomTabBar: View {
                 icon: "house.fill",
                 title: "Home",
                 isSelected: selectedTab == 0,
+                shouldAnimateAttention: false,
                 action: { 
                     selectedTab = 0
                     recipeStore.navigateToHome()
@@ -1064,7 +1076,14 @@ struct CustomTabBar: View {
                 title: "Import",
                 isSelected: selectedTab == 1,
                 isProminent: true,
-                action: { selectedTab = 1 }
+                shouldAnimateAttention: recipeStore.isFirstTimeUser,
+                action: { 
+                    selectedTab = 1
+                    // Stop animation when user visits import page for first time
+                    if recipeStore.isFirstTimeUser {
+                        recipeStore.markFirstImportCompleted()
+                    }
+                }
             )
             
             // Shopping List Tab
@@ -1072,6 +1091,7 @@ struct CustomTabBar: View {
                 icon: "list.clipboard.fill",
                 title: "Shopping",
                 isSelected: selectedTab == 2,
+                shouldAnimateAttention: false,
                 action: { selectedTab = 2 }
             )
             
@@ -1080,6 +1100,7 @@ struct CustomTabBar: View {
                 icon: "person.circle.fill",
                 title: "Profile",
                 isSelected: selectedTab == 3,
+                shouldAnimateAttention: false,
                 action: { selectedTab = 3 }
             )
         }
@@ -1100,13 +1121,18 @@ struct TabBarButton: View {
     let title: String
     let isSelected: Bool
     let isProminent: Bool
+    let shouldAnimateAttention: Bool
     let action: () -> Void
     
-    init(icon: String, title: String, isSelected: Bool, isProminent: Bool = false, action: @escaping () -> Void) {
+    @State private var animationScale: Double = 1.0
+    @State private var animationOpacity: Double = 1.0
+    
+    init(icon: String, title: String, isSelected: Bool, isProminent: Bool = false, shouldAnimateAttention: Bool = false, action: @escaping () -> Void) {
         self.icon = icon
         self.title = title
         self.isSelected = isSelected
         self.isProminent = isProminent
+        self.shouldAnimateAttention = shouldAnimateAttention
         self.action = action
     }
     
@@ -1115,17 +1141,62 @@ struct TabBarButton: View {
             VStack(spacing: 3) {
                 Image(systemName: icon)
                     .font(.system(size: isProminent ? 22 : 18, weight: .medium))
-                    .foregroundColor(isSelected ? .brandDarkGray : .brandSilver)
+                    .foregroundColor(buttonColor)
                     .frame(width: isProminent ? 38 : 28, height: isProminent ? 38 : 28)
                 
                 Text(title)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(isSelected ? .brandDarkGray : .brandSilver)
+                    .foregroundColor(buttonColor)
                     .lineLimit(1)
             }
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
+        .scaleEffect(animationScale.isFinite ? animationScale : 1.0)
+        .opacity(animationOpacity.isFinite ? animationOpacity : 1.0)
+        .onAppear {
+            if shouldAnimateAttention {
+                startAttentionAnimation()
+            }
+        }
+        .onChange(of: shouldAnimateAttention) { _, newValue in
+            if newValue {
+                startAttentionAnimation()
+            } else {
+                stopAttentionAnimation()
+            }
+        }
+    }
+    
+    private var buttonColor: Color {
+        if shouldAnimateAttention {
+            return .black // Black attention-grabbing color
+        } else {
+            return isSelected ? .brandDarkGray : .brandSilver
+        }
+    }
+    
+    private func startAttentionAnimation() {
+        // Ensure initial values are valid
+        if !animationScale.isFinite { animationScale = 1.0 }
+        if !animationOpacity.isFinite { animationOpacity = 1.0 }
+        
+        // Pulsing scale animation
+        withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+            animationScale = 1.2
+        }
+        
+        // Subtle opacity pulse
+        withAnimation(.easeInOut(duration: 1.5).repeatForever(autoreverses: true)) {
+            animationOpacity = 0.7
+        }
+    }
+    
+    private func stopAttentionAnimation() {
+        withAnimation(.easeInOut(duration: 0.3)) {
+            animationScale = 1.0
+            animationOpacity = 1.0
+        }
     }
 }
 
@@ -1313,11 +1384,18 @@ struct PlatformCard: View {
     
     var body: some View {
         HStack(spacing: 12) {
-            // Simple monochrome icon
-            Image(systemName: platformIcon)
-                .font(.system(size: 18, weight: .medium))
-                .foregroundColor(.secondary)
-                .frame(width: 24, height: 24)
+            // Use colorful SVG icons when available, fallback to system icons
+            if let svgIconName = platformSVGIcon {
+                Image(svgIconName)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+            } else {
+                Image(systemName: platformSystemIcon)
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundColor(.secondary)
+                    .frame(width: 24, height: 24)
+            }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
@@ -1341,7 +1419,16 @@ struct PlatformCard: View {
         )
     }
     
-    private var platformIcon: String {
+    private var platformSVGIcon: String? {
+        switch title.lowercased() {
+        case "tiktok": return "tiktok-coloured"
+        case "instagram": return "instagram-coloured"
+        case "youtube": return "youtube-coloured"
+        default: return nil // No SVG icon available
+        }
+    }
+    
+    private var platformSystemIcon: String {
         switch title.lowercased() {
         case "tiktok": return "music.note"
         case "instagram": return "camera"
