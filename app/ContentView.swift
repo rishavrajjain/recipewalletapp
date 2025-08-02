@@ -132,7 +132,6 @@ struct Ingredient: Codable, Identifiable, Hashable {
     
     // Helper initializer for backward compatibility
     init(name: String, category: IngredientCategory = .other) {
-        print("🥕 INGREDIENT: Creating ingredient - Name: '\(name)', Category: '\(category.displayName)'")
         self.name = name
         self.category = category
     }
@@ -144,11 +143,8 @@ struct Ingredient: Codable, Identifiable, Hashable {
         let decodedName = try container.decode(String.self, forKey: .name)
         let categoryString = try container.decodeIfPresent(String.self, forKey: .category) ?? "Other"
         
-        print("🥕 INGREDIENT: Decoding ingredient - Name: '\(decodedName)', Category: '\(categoryString)'")
-        
         // Validate that name is not empty
         guard !decodedName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            print("❌ INGREDIENT: Empty ingredient name detected")
             throw DecodingError.dataCorrupted(DecodingError.Context(
                 codingPath: decoder.codingPath,
                 debugDescription: "Ingredient name cannot be empty"
@@ -164,7 +160,6 @@ struct Ingredient: Codable, Identifiable, Hashable {
     var categoryImageURL: URL? {
         let keyword = category.displayName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "food"
         let fallbackURL = URL(string: "https://loremflickr.com/400/400/\(keyword)")
-        print("🥕 INGREDIENT: Using category-based image URL for '\(name)': \(fallbackURL?.absoluteString ?? "nil")")
         return fallbackURL
     }
 }
@@ -203,7 +198,7 @@ struct Recipe: Identifiable, Codable, Hashable {
     let description: String
     let imageUrl: String
     let prepTime: Int?
-    let cookTime: Int
+    let cookTime: Int?
     let difficulty: RecipeDifficulty?
     let nutrition: Nutrition?
     let ingredients: [Ingredient]
@@ -211,10 +206,11 @@ struct Recipe: Identifiable, Codable, Hashable {
     let extractedFrom: String?  // NEW: "instagram", "tiktok", "youtube", or "website"
     let creatorHandle: String?  // NEW: Creator's username with @ prefix
     let creatorName: String?    // NEW: Creator's display name
+    let originalUrl: String?    // NEW: Original reel/post URL for opening in browser/app
     let steps: [String]
     let createdAt: Date
     
-    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, prepTime: Int? = nil, cookTime: Int, difficulty: RecipeDifficulty? = nil, nutrition: Nutrition? = nil, ingredients: [Ingredient], isFromReel: Bool = false, extractedFrom: String? = nil, creatorHandle: String? = nil, creatorName: String? = nil, steps: [String], createdAt: Date = Date()) {
+    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, prepTime: Int? = nil, cookTime: Int? = nil, difficulty: RecipeDifficulty? = nil, nutrition: Nutrition? = nil, ingredients: [Ingredient], isFromReel: Bool = false, extractedFrom: String? = nil, creatorHandle: String? = nil, creatorName: String? = nil, originalUrl: String? = nil, steps: [String], createdAt: Date = Date()) {
         self.id = id
         self.name = name
         self.description = description
@@ -228,12 +224,13 @@ struct Recipe: Identifiable, Codable, Hashable {
         self.extractedFrom = extractedFrom
         self.creatorHandle = creatorHandle
         self.creatorName = creatorName
+        self.originalUrl = originalUrl
         self.steps = steps
         self.createdAt = createdAt
     }
     
     // Backward compatibility initializer for string ingredients (deprecated)
-    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, ingredients: [String], cookTime: Int, isFromReel: Bool = false, steps: [String], createdAt: Date = Date()) {
+    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, ingredients: [String], cookTime: Int? = nil, isFromReel: Bool = false, steps: [String], createdAt: Date = Date()) {
         self.id = id
         self.name = name
         self.description = description
@@ -247,13 +244,17 @@ struct Recipe: Identifiable, Codable, Hashable {
         self.extractedFrom = nil
         self.creatorHandle = nil
         self.creatorName = nil
+        self.originalUrl = nil
         self.steps = steps
         self.createdAt = createdAt
     }
     
     // Computed properties for UI convenience
-    var totalTime: Int {
-        return (prepTime ?? 0) + cookTime
+    var totalTime: Int? {
+        let prep = prepTime ?? 0
+        let cook = cookTime ?? 0
+        let total = prep + cook
+        return total > 0 ? total : nil
     }
     
     var difficultyText: String {
@@ -357,16 +358,13 @@ private struct APIIngredient: Decodable {
         
         if let stringValue = try? container.decode(String.self) {
             // Backend sent ingredients as strings
-            print("🥕 API_INGREDIENT: Decoding string ingredient: '\(stringValue)'")
             self.name = stringValue
             self.category = nil // No category for string ingredients
         } else if let dict = try? container.decode([String: String].self) {
             // Backend sent ingredients as objects
-            print("🥕 API_INGREDIENT: Decoding object ingredient: \(dict)")
             self.name = dict["name"] ?? ""
             self.category = dict["category"] // Assuming category is sent as a string
         } else {
-            print("❌ API_INGREDIENT: Failed to decode ingredient")
             throw DecodingError.typeMismatch(APIIngredient.self, DecodingError.Context(
                 codingPath: decoder.codingPath,
                 debugDescription: "Expected either String or Dictionary for ingredient"
@@ -385,48 +383,33 @@ private struct APIRecipe: Decodable {
     let imageUrl: String?
     let thumbnailUrl: String?
     let ingredients: [APIIngredient]?
-    let prepTimeMinutes: Int?
-    let cookTimeMinutes: Int?
+    let prepTime: Int?
+    let cookTime: Int?
     let difficulty: String?
     let nutrition: Nutrition?
     let extractedFrom: String?  // NEW: Platform source
     let creatorHandle: String?  // NEW: Creator's handle
     let creatorName: String?    // NEW: Creator's name
+    let originalUrl: String?    // NEW: Original reel/post URL
     let steps: [String]?
     
     func asRecipe() -> Recipe {
-        print("🍳 API_RECIPE: Converting API recipe to app recipe")
-        print("🍳 API_RECIPE: Title: '\(title)'")
-        print("🍳 API_RECIPE: Description: '\(description ?? "nil")'")
-        print("🍳 API_RECIPE: ImageURL: '\(imageUrl ?? "nil")'")
-        print("🍳 API_RECIPE: ThumbnailURL: '\(thumbnailUrl ?? "nil")'")
-        print("🍳 API_RECIPE: Ingredients count: \(ingredients?.count ?? 0)")
-        print("🍳 API_RECIPE: Prep time minutes: \(prepTimeMinutes ?? 0)")
-        print("🍳 API_RECIPE: Cook time minutes: \(cookTimeMinutes ?? 0)")
-        print("🍳 API_RECIPE: Difficulty: \(difficulty ?? "Unknown")")
-        print("🍳 API_RECIPE: Nutrition: \(nutrition?.calories ?? 0) cal, \(nutrition?.protein ?? 0)g P, \(nutrition?.carbs ?? 0)g C, \(nutrition?.fats ?? 0)g F")
-        print("🍳 API_RECIPE: Steps count: \(steps?.count ?? 0)")
-        
-        // Debug ingredients
-        if let ingredients = ingredients {
-            for (index, ingredient) in ingredients.enumerated() {
-                print("🍳 API_RECIPE: Ingredient[\(index)]: name='\(ingredient.name)', category='\(ingredient.category ?? "nil")'")
-            }
-        }
+        // Only print the specific values requested
+        print("Prep time: \(prepTime?.description ?? "nil")")
+        print("Cook time: \(cookTime?.description ?? "nil")")
+        print("Creator name: \(creatorName ?? "nil")")
+        print("Creator handle: \(creatorHandle ?? "nil")")
+        print("Original URL: \(originalUrl ?? "nil")")
         
         let convertedIngredients = (ingredients ?? []).map { $0.asIngredient() }
-        print("🍳 API_RECIPE: Converted ingredients count: \(convertedIngredients.count)")
         
         // For Instagram Reels, prioritize thumbnail as it's more representative of video content
         let finalImageUrl: String = {
             if let thumbnail = thumbnailUrl, !thumbnail.trimmingCharacters(in: .whitespaces).isEmpty {
-                print("🍳 API_RECIPE: Using thumbnail URL as primary image: \(thumbnail)")
                 return thumbnail
             } else if let image = imageUrl, !image.trimmingCharacters(in: .whitespaces).isEmpty {
-                print("🍳 API_RECIPE: Using image URL as fallback: \(image)")
                 return image
             } else {
-                print("🍳 API_RECIPE: No image or thumbnail available, using empty string")
                 return ""
             }
         }()
@@ -435,8 +418,8 @@ private struct APIRecipe: Decodable {
             name: title,
             description: description ?? "Recipe from Reel",
             imageUrl: finalImageUrl,
-            prepTime: prepTimeMinutes,
-            cookTime: cookTimeMinutes ?? 25,
+            prepTime: prepTime,
+            cookTime: cookTime,
             difficulty: RecipeDifficulty(rawValue: difficulty ?? "Medium"),
             nutrition: nutrition,
             ingredients: convertedIngredients,
@@ -444,10 +427,15 @@ private struct APIRecipe: Decodable {
             extractedFrom: extractedFrom,
             creatorHandle: creatorHandle,
             creatorName: creatorName,
+            originalUrl: self.originalUrl,
             steps: (steps ?? []).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         )
         
-        print("✅ API_RECIPE: Recipe conversion completed successfully")
+        // Debug: Print what was actually stored in the Recipe object
+        print("Final Recipe - Prep time: \(finalRecipe.prepTime?.description ?? "nil")")
+        print("Final Recipe - Cook time: \(finalRecipe.cookTime?.description ?? "nil")")
+        print("Final Recipe - Total time: \(finalRecipe.totalTime?.description ?? "nil")")
+        
         return finalRecipe
     }
 }
@@ -456,7 +444,6 @@ class RecipeAPIService {
     func wakeUpServer() async {
         do {
             let healthURL = APIConfig.endpoint("health")
-            print("🚀 HEALTH_CHECK: Waking up server at \(healthURL)")
             
             var request = URLRequest(url: healthURL)
             request.httpMethod = "GET"
@@ -464,24 +451,13 @@ class RecipeAPIService {
             
             let (data, response) = try await URLSession.shared.data(for: request)
             
-            if let httpResponse = response as? HTTPURLResponse {
-                print("🚀 HEALTH_CHECK: Server responded with status \(httpResponse.statusCode)")
-                
-                if let responseString = String(data: data, encoding: .utf8) {
-                    print("🚀 HEALTH_CHECK: Response: \(responseString)")
-                }
-            }
         } catch {
-            print("⚠️ HEALTH_CHECK: Failed to wake up server: \(error.localizedDescription)")
             // Don't throw error - this is just a wake-up call, not critical
         }
     }
     
     func importRecipeFromReel(reelURL: String) async throws -> Recipe {
-        print("🚀 IMPORT: Starting recipe import from URL: \(reelURL)")
-        
         let importURL = APIConfig.endpoint("import-recipe")
-        print("🚀 IMPORT: API endpoint: \(importURL)")
         
         var request = URLRequest(url: importURL)
         request.httpMethod = "POST"
@@ -489,31 +465,19 @@ class RecipeAPIService {
         request.timeoutInterval = 90
         
         do {
-        request.httpBody = try JSONEncoder().encode(["link": reelURL])
-            print("🚀 IMPORT: Request body created successfully")
+            request.httpBody = try JSONEncoder().encode(["link": reelURL])
         } catch {
-            print("❌ IMPORT: Failed to encode request body: \(error)")
             throw APIError.serverError("Failed to create request: \(error.localizedDescription)")
         }
         
-        print("🚀 IMPORT: Sending request to server...")
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("❌ IMPORT: Invalid HTTP response")
             throw APIError.serverError("Invalid server response")
-        }
-        
-        print("🚀 IMPORT: HTTP Status Code: \(httpResponse.statusCode)")
-        
-        if let responseString = String(data: data, encoding: .utf8) {
-            print("🚀 IMPORT: Raw server response:")
-            print(responseString)
         }
         
         guard httpResponse.statusCode == 200 else {
             let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown server error"
-            print("❌ IMPORT: Server error (\(httpResponse.statusCode)): \(errorMessage)")
             
             // Handle specific error responses from the new universal importer
             if httpResponse.statusCode == 500 {
@@ -525,55 +489,25 @@ class RecipeAPIService {
                     throw APIError.serverError("Failed to extract a valid recipe from the provided link. The content may not be a recipe or the website is not supported.")
                 }
             } else {
-            throw APIError.serverError("Server connection failed. Please try again.")
+                throw APIError.serverError("Server connection failed. Please try again.")
             }
         }
         
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        // Backend already sends camelCase, no conversion needed
         
         do {
-            print("🚀 IMPORT: Attempting to decode API response...")
-        let apiResponse = try decoder.decode(APIResponse.self, from: data)
-            print("🚀 IMPORT: API Response decoded - Success: \(apiResponse.success)")
+            let apiResponse = try decoder.decode(APIResponse.self, from: data)
             
-            if let source = apiResponse.source {
-                print("🚀 IMPORT: Recipe extracted using: \(source)")
-            }
-            
-            if let error = apiResponse.error {
-                print("🚀 IMPORT: API returned error: \(error)")
-            }
-        
-        guard apiResponse.success, let apiRecipe = apiResponse.recipe else {
+            guard apiResponse.success, let apiRecipe = apiResponse.recipe else {
                 let errorMsg = apiResponse.error ?? "Could not extract a recipe from the link."
-                print("❌ IMPORT: API failed: \(errorMsg)")
                 throw APIError.serverError(errorMsg)
             }
             
-            print("🚀 IMPORT: Converting API recipe to app recipe...")
             let finalRecipe = apiRecipe.asRecipe()
-            print("✅ IMPORT: Recipe conversion successful - Name: \(finalRecipe.name)")
-            print("✅ IMPORT: Recipe ingredients count: \(finalRecipe.ingredients.count)")
-            
             return finalRecipe
             
         } catch let decodingError {
-            print("❌ IMPORT: JSON decoding failed: \(decodingError)")
-            if let decodingError = decodingError as? DecodingError {
-                switch decodingError {
-                case .dataCorrupted(let context):
-                    print("❌ IMPORT: Data corrupted: \(context)")
-                case .keyNotFound(let key, let context):
-                    print("❌ IMPORT: Key not found: \(key) - \(context)")
-                case .typeMismatch(let type, let context):
-                    print("❌ IMPORT: Type mismatch: \(type) - \(context)")
-                case .valueNotFound(let type, let context):
-                    print("❌ IMPORT: Value not found: \(type) - \(context)")
-                @unknown default:
-                    print("❌ IMPORT: Unknown decoding error")
-                }
-            }
             throw APIError.serverError("Failed to parse server response: \(decodingError.localizedDescription)")
         }
     }
@@ -614,6 +548,7 @@ class RecipeStore: ObservableObject {
     @Published var isProcessingReel = false
     @Published var importError: (isPresented: Bool, message: String) = (false, "")
     @Published var loadingRecipeName = ""
+    @Published var shouldDismissToHome = false
     
     private let apiService = RecipeAPIService()
     private var importTask: Task<Recipe, Error>?
@@ -632,7 +567,7 @@ class RecipeStore: ObservableObject {
         if recipes.isEmpty {
             loadSampleData()
         } else {
-            // If we have existing recipes but no High Protein Meal Preps collection, create it
+            // If we have existing recipes but no Meal Preps collection, create it
             ensureMealPrepsCollectionExists()
         }
         filterRecipes()
@@ -642,8 +577,8 @@ class RecipeStore: ObservableObject {
         // Remove any old "Favorites" collections
         collections.removeAll { $0.name == "Favorites" }
         
-        // If we have recipes but the High Protein Meal Preps collection is empty, fix it
-        if let mealPrepsIndex = collections.firstIndex(where: { $0.name == "High Protein Meal Preps" }),
+        // If we have recipes but the Meal Preps collection is empty, fix it
+        if let mealPrepsIndex = collections.firstIndex(where: { $0.name == "Meal Preps" }),
            collections[mealPrepsIndex].recipeIDs.isEmpty && !recipes.isEmpty {
             collections[mealPrepsIndex].recipeIDs = recipes.map { $0.id }
         }
@@ -657,16 +592,16 @@ class RecipeStore: ObservableObject {
     }
     
     func deleteCollection(_ collection: Collection) {
-        // Prevent the protected "High Protein Meal Preps" collection from being deleted
-        guard collection.name != "High Protein Meal Preps" else { return }
+        // Prevent the protected "Meal Preps" collection from being deleted
+        guard collection.name != "Meal Preps" else { return }
         collections.removeAll { $0.id == collection.id }
     }
     
     private func ensureMealPrepsCollectionExists() {
-        if !collections.contains(where: { $0.name == "High Protein Meal Preps" }) {
-            // Create High Protein Meal Preps collection with all existing recipes
+        if !collections.contains(where: { $0.name == "Meal Preps" }) {
+            // Create Meal Preps collection with all existing recipes
             let mealPreps = Collection(
-                name: "High Protein Meal Preps",
+                name: "Meal Preps",
                 recipeIDs: recipes.map { $0.id }
             )
             collections.append(mealPreps)
@@ -694,6 +629,16 @@ class RecipeStore: ObservableObject {
     
     func isRecipe(_ recipe: Recipe, in collection: Collection) -> Bool {
         collection.recipeIDs.contains(recipe.id)
+    }
+    
+    // MARK: Navigation
+    
+    func navigateToHome() {
+        shouldDismissToHome = true
+        // Reset the flag after a brief delay to allow views to react
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            self.shouldDismissToHome = false
+        }
     }
     
     // MARK: Recipe Management
@@ -815,7 +760,6 @@ class RecipeStore: ObservableObject {
                 let decodedRecipes = try decoder.decode([Recipe].self, from: recipesData)
             self.recipes = decodedRecipes
             } catch {
-                print("⚠️ Failed to load recipes with new format, clearing old data: \(error)")
                 // Clear old incompatible data and start fresh
                 UserDefaults.standard.removeObject(forKey: recipesKey)
                 self.recipes = []
@@ -828,7 +772,6 @@ class RecipeStore: ObservableObject {
                 let decodedCollections = try decoder.decode([Collection].self, from: collectionsData)
             self.collections = decodedCollections
             } catch {
-                print("⚠️ Failed to load collections, clearing old data: \(error)")
                 UserDefaults.standard.removeObject(forKey: collectionsKey)
                 self.collections = []
             }
@@ -840,7 +783,6 @@ class RecipeStore: ObservableObject {
                 let decodedShoppingList = try decoder.decode([ShoppingListItem].self, from: shoppingListData)
                 self.shoppingList = decodedShoppingList
             } catch {
-                print("⚠️ Failed to load shopping list, clearing old data: \(error)")
                 UserDefaults.standard.removeObject(forKey: shoppingListKey)
                 self.shoppingList = []
             }
@@ -876,7 +818,7 @@ class RecipeStore: ObservableObject {
                 description: "A high-protein, flavor-packed meal featuring juicy chipotle chicken, smoky charred sweetcorn, and zesty rice with black beans. Perfect for meal prep or a satisfying lunch, this recipe brings together bold spices and fresh ingredients for a delicious, balanced plate.",
                 imageUrl: "https://scontent-sea1-1.cdninstagram.com/v/t51.75761-15/490219596_18002752127761551_3326422995220106638_n.jpg?stp=cmp1_dst-jpg_e35_s640x640_tt6&_nc_cat=106&ccb=1-7&_nc_sid=18de74&_nc_ohc=e4wcEFJX_1AQ7kNvwGzjosE&_nc_oc=AdnM7kNQcyRqANOh_5dsMjgAVJ-NXPtdjZ5MOqDv4OQsp0fYkX6Q_XBOqQYSS0eVD7w&_nc_zt=23&_nc_ht=scontent-sea1-1.cdninstagram.com&_nc_gid=vRQACGxnq7uvkrHjtaVX8g&oh=00_AfQGOXLnYNJRE4781NnY73xRFv82TttdfaVz0y783smLRA&oe=688FC31B",
                 prepTime: 15,
-                cookTime: 25,
+                cookTime: 35,
                 difficulty: .easy,
                 nutrition: Nutrition(calories: 610, protein: 50, carbs: 60, fats: 19, portions: 3),
                 ingredients: [
@@ -1042,9 +984,9 @@ class RecipeStore: ObservableObject {
                 ]
             )
         ]
-        // Create High Protein Meal Preps collection with all recipes
+        // Create Meal Preps collection with all recipes
         let mealPrepsCollection = Collection(
-            name: "High Protein Meal Preps",
+            name: "Meal Preps",
             recipeIDs: self.recipes.map { $0.id }
         )
         self.collections = [mealPrepsCollection]
@@ -1101,6 +1043,7 @@ struct TabBarView: View {
 
 struct CustomTabBar: View {
     @Binding var selectedTab: Int
+    @EnvironmentObject var recipeStore: RecipeStore
     
     var body: some View {
         HStack(spacing: 0) {
@@ -1109,7 +1052,10 @@ struct CustomTabBar: View {
                 icon: "house.fill",
                 title: "Home",
                 isSelected: selectedTab == 0,
-                action: { selectedTab = 0 }
+                action: { 
+                    selectedTab = 0
+                    recipeStore.navigateToHome()
+                }
             )
             
             // Import Tab (Prominent)
@@ -1743,6 +1689,7 @@ struct RecipeInfoCard: View {
 struct RecipeDetailView: View {
     let recipe: Recipe
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var recipeStore: RecipeStore
     
     var body: some View {
         ScrollView {
@@ -1797,12 +1744,14 @@ struct RecipeDetailView: View {
                             }
                             
                             // Cook Time
-                            RecipeInfoCard(
-                                icon: "flame",
-                                title: "Cook Time", 
-                                value: "\(recipe.cookTime) min",
-                                color: .red
-                            )
+                            if let cookTime = recipe.cookTime {
+                                RecipeInfoCard(
+                                    icon: "flame",
+                                    title: "Cook Time", 
+                                    value: "\(cookTime) min",
+                                    color: .red
+                                )
+                            }
                             
                             // Difficulty
                             if let difficulty = recipe.difficulty {
@@ -1831,7 +1780,7 @@ struct RecipeDetailView: View {
                         }
                         
                         // Creator Information
-                        if recipe.hasCreatorInfo, let creatorName = recipe.displayCreatorName {
+                        if recipe.hasCreatorInfo, let creatorName = recipe.creatorHandle {
                             HStack(spacing: 8) {
                                 Image(systemName: "person.circle.fill")
                                     .font(.system(size: 16))
@@ -1870,49 +1819,36 @@ struct RecipeDetailView: View {
                     }
                 }
         )
+        .onReceive(recipeStore.$shouldDismissToHome) { shouldDismiss in
+            if shouldDismiss {
+                dismiss()
+            }
+        }
     }
     
     private func openOriginalSource() {
-        guard recipe.isFromReel, let extractedFrom = recipe.extractedFrom else { return }
-        
-        // Try to construct the original URL
-        let originalURL: String
-        switch extractedFrom.lowercased() {
-        case "instagram":
-            // Try to open Instagram app, fallback to web
-            if let instagramURL = URL(string: "instagram://media?id=\(recipe.id)"),
-               UIApplication.shared.canOpenURL(instagramURL) {
-                UIApplication.shared.open(instagramURL)
-                return
-            }
-            // Fallback to web - we'd need the original URL stored
-            originalURL = "https://instagram.com"
-            
-        case "tiktok":
-            // Try to open TikTok app, fallback to web
-            if let tiktokURL = URL(string: "tiktok://"),
-               UIApplication.shared.canOpenURL(tiktokURL) {
-                UIApplication.shared.open(tiktokURL)
-                return
-            }
-            originalURL = "https://tiktok.com"
-            
-        case "youtube":
-            // Try to open YouTube app, fallback to web
-            if let youtubeURL = URL(string: "youtube://"),
-               UIApplication.shared.canOpenURL(youtubeURL) {
-                UIApplication.shared.open(youtubeURL)
-                return
-            }
-            originalURL = "https://youtube.com"
-            
-        default:
-            // For websites, just open in Safari
-            originalURL = "https://google.com/search?q=\(recipe.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+        // First try to use the stored original URL
+        if let originalUrl = recipe.originalUrl, let url = URL(string: originalUrl) {
+            UIApplication.shared.open(url)
+            return
         }
         
-        // Open fallback URL in Safari
-        if let url = URL(string: originalURL) {
+        // Fallback to old behavior for recipes without stored URL
+        guard recipe.isFromReel, let extractedFrom = recipe.extractedFrom else { return }
+        
+        let fallbackURL: String
+        switch extractedFrom.lowercased() {
+        case "instagram":
+            fallbackURL = "https://instagram.com"
+        case "tiktok":
+            fallbackURL = "https://tiktok.com"
+        case "youtube":
+            fallbackURL = "https://youtube.com"
+        default:
+            fallbackURL = "https://google.com/search?q=\(recipe.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")"
+        }
+        
+        if let url = URL(string: fallbackURL) {
             UIApplication.shared.open(url)
         }
     }
@@ -2018,9 +1954,11 @@ struct AddRecipesToCollectionSheet: View {
                         HStack {
                             VStack(alignment: .leading) {
                                 Text(recipe.name).lineLimit(1)
-                                Text("\(recipe.cookTime) min")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                if let totalTime = recipe.totalTime {
+                                    Text("\(totalTime) min")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
                             Spacer()
                             if store.isRecipe(recipe, in: collection) {
@@ -2065,7 +2003,8 @@ struct ShareCollectionSheet: View {
             content += "📋 \(recipesInCollection.count) delicious \(recipesInCollection.count == 1 ? "recipe" : "recipes"):\n\n"
             
             for (index, recipe) in recipesInCollection.prefix(5).enumerated() {
-                content += "\(index + 1). \(recipe.name) (\(recipe.cookTime) min)\n"
+                let timeText = recipe.totalTime.map { "\($0) min" } ?? ""
+                content += "\(index + 1). \(recipe.name)" + (timeText.isEmpty ? "" : " (\(timeText))") + "\n"
             }
             
             if recipesInCollection.count > 5 {
@@ -2346,14 +2285,10 @@ struct RecipeCard: View {
                     .minimumScaleFactor(0.8)
                 
                 HStack(spacing: 4) {
-                    if let prepTime = recipe.prepTime {
-                        Label("\(prepTime + recipe.cookTime) min", systemImage: "clock")
+                    if let totalTime = recipe.totalTime {
+                        Label("\(totalTime) min", systemImage: "clock")
                             .font(.caption)
                             .foregroundColor(.secondary)
-                    } else {
-                Label("\(recipe.cookTime) min", systemImage: "clock")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
                     }
                     
                     if let difficulty = recipe.difficulty {
@@ -2496,7 +2431,7 @@ struct CollectionCard: View {
             .frame(width: 160, height: 100)
             
             // Menu overlay (top right)
-            if collection.name != "High Protein Meal Preps" {
+            if collection.name != "Meal Preps" {
                 VStack {
                     HStack {
                         Spacer()

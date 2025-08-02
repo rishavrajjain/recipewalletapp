@@ -69,7 +69,7 @@ struct IngredientsView: View {
                     .background(Color(.secondarySystemGroupedBackground))
                     .onAppear {
                         if showImages {
-                            print("✅ Ingredient \(ingredient.name) category image URL: \(ingredient.categoryImageURL?.absoluteString ?? "nil")")
+                            // Load category image
                         }
                     }
                     
@@ -196,7 +196,7 @@ struct CategorySection: View {
                     .background(Color(.secondarySystemGroupedBackground))
                     .onAppear {
                         if showImages {
-                            print("✅ Ingredient \(ingredient.name) category image URL: \(ingredient.categoryImageURL?.absoluteString ?? "nil")")
+                            // Load category image
                         }
                     }
                     

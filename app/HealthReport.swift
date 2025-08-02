@@ -129,7 +129,7 @@ struct SimpleRecipe: Codable {
     let description: String
     let imageUrl: String
     let ingredients: [String]  // Simple names only
-    let cookTime: Int
+    let cookTime: Int?
     let isFromReel: Bool
     let steps: [String]
     let createdAt: Date
@@ -184,7 +184,7 @@ struct BackendRecipe: Codable {
         self.description = recipe.description
         self.imageUrl = recipe.imageUrl
         self.prepTime = recipe.prepTime ?? 0  // Default to 0 if nil
-        self.cookTime = recipe.cookTime
+        self.cookTime = recipe.cookTime ?? 0  // Default to 0 if nil
         self.difficulty = recipe.difficulty?.rawValue ?? "Medium"  // Default to "Medium"
         self.nutrition = NutritionInfo(from: recipe.nutrition ?? Nutrition())  // Default empty nutrition
         self.ingredients = recipe.ingredients.map { CategorizedIngredient(from: $0) }
@@ -335,67 +335,22 @@ actor HealthAnalysisAPI {
         encoder.dateEncodingStrategy = .iso8601
         request.httpBody = try encoder.encode(requestBody)
         
-        // DEBUG: Print FULL request details
-        print("🚀 HEALTH ANALYSIS REQUEST:")
-        print("Include Blood Test: \(includeBloodTest)")
-        print("Blood Test ID: \(bloodTestId ?? "nil")")
-        print("Recipe: \(recipe.name)")
-        print("Original Recipe Ingredients:")
-        for (i, ingredient) in recipe.ingredients.enumerated() {
-            print("  [\(i)] name: '\(ingredient.name)', category: '\(ingredient.category.displayName)'")
-        }
-        
         let backendRecipe = BackendRecipe(from: recipe)
-        print("Backend Recipe Fields:")
-        print("  title: '\(backendRecipe.title)'")
-        print("  prepTime: \(backendRecipe.prepTime)")
-        print("  difficulty: '\(backendRecipe.difficulty)'")
-        print("  extractedFrom: '\(backendRecipe.extractedFrom)'")
-        print("  nutrition: calories=\(backendRecipe.nutrition.calories ?? 0), protein=\(backendRecipe.nutrition.protein ?? 0)")
-        print("Backend Recipe Ingredients:")
-        for (i, ingredient) in backendRecipe.ingredients.enumerated() {
-            print("  [\(i)] name: '\(ingredient.name)', category: '\(ingredient.category)'")
-        }
-        
-        // Print the actual JSON being sent
-        if let jsonString = String(data: request.httpBody!, encoding: .utf8) {
-            print("📤 FULL JSON PAYLOAD:")
-            print(jsonString)
-        }
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
         guard let httpResponse = response as? HTTPURLResponse else {
-            print("❌ Invalid HTTP response")
             throw HealthAnalysisError.serverError("Invalid response")
         }
         
-        print("📡 HTTP Status Code: \(httpResponse.statusCode)")
-        
         guard httpResponse.statusCode == 200 else {
-            print("❌ Server error - Status: \(httpResponse.statusCode)")
-            if let errorString = String(data: data, encoding: .utf8) {
-                print("Error response: \(errorString)")
-            }
             throw HealthAnalysisError.serverError("Server returned status \(httpResponse.statusCode)")
-        }
-        
-        // DEBUG: Print raw response
-        if let jsonString = String(data: data, encoding: .utf8) {
-            print("📦 RAW API RESPONSE:")
-            print(jsonString)
         }
         
         do {
             let apiResponse = try JSONDecoder().decode(HealthAnalysisAPIResponse.self, from: data)
-            print("✅ JSON decoded successfully")
             return apiResponse.analysis
         } catch {
-            print("❌ JSON DECODING ERROR:")
-            print("Error: \(error)")
-            if let decodingError = error as? DecodingError {
-                print("Decoding error details: \(decodingError)")
-            }
             throw HealthAnalysisError.analysisError("Failed to decode response: \(error.localizedDescription)")
         }
     }
@@ -499,7 +454,6 @@ struct HealthReport: View {
             } catch {
                 await MainActor.run {
                     self.isLoading = false
-                    print("🔥 HEALTH ANALYSIS ERROR: \(error.localizedDescription)")
                     // TODO: Show error state in UI
                 }
             }
