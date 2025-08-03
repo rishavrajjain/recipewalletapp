@@ -256,17 +256,17 @@ struct UserInfoView: View {
                                     .cornerRadius(16)
                             }
                             
-                            Button(action: {
-                                showingDeleteConfirmation = true
-                            }) {
-                                Text("Delete Account")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 52)
-                                    .background(Color.red)
-                                    .cornerRadius(16)
-                            }
+                            // Button(action: {
+                            //     showingDeleteConfirmation = true
+                            // }) {
+                            //     Text("Delete Account")
+                            //         .font(.system(size: 16, weight: .semibold))
+                            //         .foregroundColor(.white)
+                            //         .frame(maxWidth: .infinity)
+                            //         .frame(height: 52)
+                            //         .background(Color.red)
+                            //         .cornerRadius(16)
+                            // }
                         }
                         .padding(.horizontal, 24)
                         .padding(.bottom, 120) // Account for tab bar

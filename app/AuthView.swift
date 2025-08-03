@@ -59,7 +59,7 @@ struct AuthView: View {
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundColor(.black)
 
-                        Text("Your culinary journey starts here")
+                        Text("Your food journey starts here")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.black.opacity(0.7))
                     }
@@ -96,19 +96,11 @@ struct AuthView: View {
                                     .scaleEffect(0.8)
                                     .tint(.black.opacity(0.8))
                             } else {
-                                // Google G icon styled to match official branding
-                                ZStack {
-                                    Circle()
-                                        .fill(Color.white)
-                                        .frame(width: 20, height: 20)
-                                        .overlay(
-                                            Circle()
-                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                                        )
-                                    Text("G")
-                                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                                        .foregroundColor(.black.opacity(0.8))
-                                }
+                                // Official Google logo
+                                Image("google-logo")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 20, height: 20)
                             }
 
                             Text(authViewModel.isAuthenticating ? "Signing in..." : "Continue with Google")
