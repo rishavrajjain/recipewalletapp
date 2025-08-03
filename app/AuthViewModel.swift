@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Firebase
 import FirebaseAuth
+import FirebaseFirestore
 import GoogleSignIn
 import AuthenticationServices
 import CryptoKit
@@ -11,6 +12,8 @@ class AuthViewModel: NSObject, ObservableObject {
     /// The currently authenticated Firebase user
     @Published var user: User?
     @Published var isAuthenticating = false
+    @Published var errorMessage: String?
+    @Published var showingError = false
 
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     private var currentNonce: String?
@@ -26,6 +29,7 @@ class AuthViewModel: NSObject, ObservableObject {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                         self?.user = user
                         self?.isAuthenticating = false
+                        self?.clearError()
                     }
                 } else {
                     self?.user = user
@@ -45,9 +49,14 @@ class AuthViewModel: NSObject, ObservableObject {
 
     /// Starts the Google sign in flow
     func signInWithGoogle(presenting: UIViewController) {
+        // Prevent double taps
+        guard !isAuthenticating else { return }
+        
         isAuthenticating = true
+        clearError()
         
         guard let clientID = FirebaseApp.app()?.options.clientID else { 
+            showError("Google configuration error. Please try again.")
             isAuthenticating = false
             return 
         }
@@ -56,40 +65,45 @@ class AuthViewModel: NSObject, ObservableObject {
         GIDSignIn.sharedInstance.configuration = config
 
         GIDSignIn.sharedInstance.signIn(withPresenting: presenting) { [weak self] result, error in
-            if let error = error {
-                print("Google sign in failed: \(error.localizedDescription)")
-                DispatchQueue.main.async {
-                    self?.isAuthenticating = false
-                }
-                return
-            }
-            guard
-                let idToken = result?.user.idToken?.tokenString,
-                let accessToken = result?.user.accessToken.tokenString
-            else { 
-                DispatchQueue.main.async {
-                    self?.isAuthenticating = false
-                }
-                return 
-            }
-
-            let credential = GoogleAuthProvider.credential(withIDToken: idToken,
-                                                           accessToken: accessToken)
-            Auth.auth().signIn(with: credential) { [weak self] _, error in
+            DispatchQueue.main.async {
                 if let error = error {
-                    print("Firebase auth with Google credential failed: \(error.localizedDescription)")
+                    self?.showError("Google sign-in failed: \(error.localizedDescription)")
+                    self?.isAuthenticating = false
+                    return
+                }
+                
+                guard
+                    let idToken = result?.user.idToken?.tokenString,
+                    let accessToken = result?.user.accessToken.tokenString
+                else { 
+                    self?.showError("Failed to get Google authentication tokens. Please try again.")
+                    self?.isAuthenticating = false
+                    return 
+                }
+
+                let credential = GoogleAuthProvider.credential(withIDToken: idToken,
+                                                               accessToken: accessToken)
+                Auth.auth().signIn(with: credential) { [weak self] authResult, error in
                     DispatchQueue.main.async {
-                        self?.isAuthenticating = false
+                        if let error = error {
+                            self?.showError("Authentication failed: \(error.localizedDescription)")
+                            self?.isAuthenticating = false
+                        } else {
+                            // Success - ensure user profile is created with Firebase UID as primary key
+                            self?.createUserProfileIfNeeded(authResult?.user)
+                        }
                     }
                 }
-                // Success case is handled by auth state listener
             }
         }
     }
 
     /// Prepares the Apple sign in request with a cryptographic nonce
     func handleAppleSignIn(request: ASAuthorizationAppleIDRequest) {
+        guard !isAuthenticating else { return }
+        
         isAuthenticating = true
+        clearError()
         
         let nonce = randomNonceString()
         currentNonce = nonce
@@ -107,29 +121,28 @@ class AuthViewModel: NSObject, ObservableObject {
                 let appleIDToken = appleIDCredential.identityToken,
                 let idTokenString = String(data: appleIDToken, encoding: .utf8)
             else { 
-                DispatchQueue.main.async {
-                    self.isAuthenticating = false
-                }
+                showError("Apple sign-in failed. Please try again.")
+                isAuthenticating = false
                 return 
             }
 
             let credential = OAuthProvider.appleCredential(withIDToken: idTokenString,
                                                            rawNonce: nonce,
                                                            fullName: appleIDCredential.fullName)
-            Auth.auth().signIn(with: credential) { [weak self] _, error in
-                if let error = error {
-                    print("Apple sign in failed: \(error.localizedDescription)")
-                    DispatchQueue.main.async {
+            Auth.auth().signIn(with: credential) { [weak self] authResult, error in
+                DispatchQueue.main.async {
+                    if let error = error {
+                        self?.showError("Apple authentication failed: \(error.localizedDescription)")
                         self?.isAuthenticating = false
+                    } else {
+                        // Success - handle Apple's "Hide My Email" properly
+                        self?.createUserProfileIfNeeded(authResult?.user, fullName: appleIDCredential.fullName)
                     }
                 }
-                // Success case is handled by auth state listener
             }
         case .failure(let error):
-            print("Apple sign in request failed: \(error.localizedDescription)")
-            DispatchQueue.main.async {
-                self.isAuthenticating = false
-            }
+            showError("Apple sign-in request failed: \(error.localizedDescription)")
+            isAuthenticating = false
         }
     }
 
@@ -139,8 +152,103 @@ class AuthViewModel: NSObject, ObservableObject {
             try Auth.auth().signOut()
             user = nil
             isAuthenticating = false
+            clearError()
         } catch {
-            print("Error signing out: \(error.localizedDescription)")
+            showError("Error signing out: \(error.localizedDescription)")
+        }
+    }
+    
+    /// Soft delete user account (marks as deleted but doesn't actually delete)
+    func softDeleteAccount() {
+        guard let currentUser = Auth.auth().currentUser else {
+            showError("No user is currently signed in")
+            return
+        }
+        
+        // Mark user as deleted in Firestore instead of actually deleting
+        let db = Firestore.firestore()
+        db.collection("users").document(currentUser.uid).updateData([
+            "isDeleted": true,
+            "deletedAt": FieldValue.serverTimestamp()
+        ]) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self?.showError("Failed to delete account: \(error.localizedDescription)")
+                } else {
+                    // Sign out after marking as deleted
+                    self?.signOut()
+                }
+            }
+        }
+    }
+    
+    // MARK: - Error Handling
+    
+    func showError(_ message: String) {
+        errorMessage = message
+        showingError = true
+        print("🚨 Auth Error: \(message)")
+    }
+    
+    func clearError() {
+        errorMessage = nil
+        showingError = false
+    }
+    
+    // MARK: - Private Methods
+    
+    /// Creates user profile if needed, handles Apple's Hide My Email properly
+    private func createUserProfileIfNeeded(_ user: User?, fullName: PersonNameComponents? = nil) {
+        guard let user = user else { return }
+        
+        let db = Firestore.firestore()
+        let userRef = db.collection("users").document(user.uid) // Firebase UID as primary key
+        
+        userRef.getDocument { [weak self] snapshot, error in
+            if let error = error {
+                print("Error checking user profile: \(error)")
+                return
+            }
+            
+            // If user doesn't exist, create profile
+            if !(snapshot?.exists ?? false) {
+                var userData: [String: Any] = [
+                    "uid": user.uid, // Firebase UID as primary key
+                    "createdAt": FieldValue.serverTimestamp(),
+                    "lastSignIn": FieldValue.serverTimestamp(),
+                    "isDeleted": false
+                ]
+                
+                // Handle email (might be Apple's private relay email)
+                if let email = user.email {
+                    userData["email"] = email
+                    userData["emailVerified"] = user.isEmailVerified
+                }
+                
+                // Handle display name
+                if let fullName = fullName {
+                    let displayName = PersonNameComponentsFormatter().string(from: fullName)
+                    userData["name"] = displayName
+                } else if let displayName = user.displayName, !displayName.isEmpty {
+                    userData["name"] = displayName
+                }
+                
+                // Provider info
+                if let providerData = user.providerData.first {
+                    userData["provider"] = providerData.providerID
+                }
+                
+                userRef.setData(userData) { error in
+                    if let error = error {
+                        print("Error creating user profile: \(error)")
+                    } else {
+                        print("✅ User profile created successfully for UID: \(user.uid)")
+                    }
+                }
+            } else {
+                // Update last sign in
+                userRef.updateData(["lastSignIn": FieldValue.serverTimestamp()])
+            }
         }
     }
 

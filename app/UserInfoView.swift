@@ -41,6 +41,7 @@ struct UserInfoView: View {
     @State private var isSaving = false
     @State private var isLoading = true
     @State private var showingSavedConfirmation = false
+    @State private var showingDeleteConfirmation = false
     @State private var errorMessage: String?
     @State private var showingError = false
     
@@ -254,6 +255,18 @@ struct UserInfoView: View {
                                     .background(Color(.systemGray6))
                                     .cornerRadius(16)
                             }
+                            
+                            Button(action: {
+                                showingDeleteConfirmation = true
+                            }) {
+                                Text("Delete Account")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 52)
+                                    .background(Color.red)
+                                    .cornerRadius(16)
+                            }
                         }
                         .padding(.horizontal, 24)
                         .padding(.bottom, 120) // Account for tab bar
@@ -277,6 +290,14 @@ struct UserInfoView: View {
             Button("OK") { showingError = false }
         } message: {
             Text(errorMessage ?? "An error occurred")
+        }
+        .confirmationDialog("Delete Account", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("Delete Account", role: .destructive) {
+                authViewModel.softDeleteAccount()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will delete your account. This action cannot be undone. Are you sure you want to continue?")
         }
     }
     

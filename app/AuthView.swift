@@ -1,12 +1,15 @@
 import SwiftUI
 import GoogleSignInSwift
 import AuthenticationServices
+import SafariServices
 
 /// Beautifully designed authentication screen matching the Recipe Wallet brand
 struct AuthView: View {
     @EnvironmentObject var authViewModel: AuthViewModel
     @State private var logoScale: CGFloat = 0.8
     @State private var buttonsOpacity: Double = 0.0
+    @State private var showingSafari = false
+    @State private var safariURL: URL?
     
     var body: some View {
         ZStack {
@@ -55,18 +58,36 @@ struct AuthView: View {
                         Text("Recipe Wallet AI")
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundColor(.black)
-                        
+
                         Text("Your culinary journey starts here")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.black.opacity(0.7))
                     }
                 }
-                
+
                 Spacer()
                 Spacer()
-                
+
                 // Authentication Buttons Section
                 VStack(spacing: 16) {
+                    // Apple Sign In Button (First on iOS as per guidelines)
+                    SignInWithAppleButton(
+                        .signIn,
+                        onRequest: { request in
+                            authViewModel.handleAppleSignIn(request: request)
+                        },
+                        onCompletion: { result in
+                            authViewModel.handleAppleSignInCompletion(result: result)
+                        }
+                    )
+                    .signInWithAppleButtonStyle(.black)
+                    .frame(height: 50) // ≥ 44pt as required
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    .padding(.horizontal, 32)
+                    .disabled(authViewModel.isAuthenticating)
+                    .opacity(authViewModel.isAuthenticating ? 0.6 : 1.0)
+
                     // Google Sign In Button
                     Button(action: handleGoogleSignIn) {
                         HStack(spacing: 12) {
@@ -75,9 +96,19 @@ struct AuthView: View {
                                     .scaleEffect(0.8)
                                     .tint(.black.opacity(0.8))
                             } else {
-                                Image(systemName: "globe")
-                                    .font(.system(size: 20, weight: .medium))
-                                    .foregroundColor(.black.opacity(0.8))
+                                // Google G icon styled to match official branding
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.white)
+                                        .frame(width: 20, height: 20)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                                        )
+                                    Text("G")
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundColor(.black.opacity(0.8))
+                                }
                             }
 
                             Text(authViewModel.isAuthenticating ? "Signing in..." : "Continue with Google")
@@ -85,7 +116,7 @@ struct AuthView: View {
                                 .foregroundColor(.black)
                         }
                         .frame(maxWidth: .infinity)
-                        .frame(height: 56)
+                        .frame(height: 50) // Same height as Apple button
                         .background(
                             RoundedRectangle(cornerRadius: 16)
                                 .fill(authViewModel.isAuthenticating ? Color.white.opacity(0.7) : Color.white)
@@ -94,44 +125,57 @@ struct AuthView: View {
                     }
                     .disabled(authViewModel.isAuthenticating)
                     .padding(.horizontal, 32)
-                    
-                    // Apple Sign In Button
-                    SignInWithAppleButton(.signIn) { request in
-                        authViewModel.handleAppleSignIn(request: request)
-                    } onCompletion: { result in
-                        authViewModel.handleAppleSignInCompletion(result: result)
-                    }
-                    .signInWithAppleButtonStyle(.black)
-                    .frame(height: 56)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
-                    .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                    .padding(.horizontal, 32)
-                    .disabled(authViewModel.isAuthenticating)
-                    .opacity(authViewModel.isAuthenticating ? 0.6 : 1.0)
                 }
                 .opacity(buttonsOpacity)
                 .animation(.easeInOut(duration: 0.8).delay(0.4), value: buttonsOpacity)
-                
+
                 Spacer()
-                
-                // Footer
+
+                // Error Message Display
+                if let errorMessage = authViewModel.errorMessage {
+                    VStack(spacing: 8) {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                            Text(errorMessage)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.red)
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.red.opacity(0.1))
+                        )
+                        .padding(.horizontal, 32)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                // Footer with Tappable Terms
                 VStack(spacing: 8) {
                     Text("By continuing, you agree to our")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.black.opacity(0.6))
-                    
+
                     HStack(spacing: 4) {
-                        Text("Terms of Service")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.black.opacity(0.8))
-                        
+                        Button(action: { openTermsOfService() }) {
+                            Text("Terms of Service")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.black.opacity(0.8))
+                                .underline()
+                        }
+
                         Text("and")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.black.opacity(0.6))
-                        
-                        Text("Privacy Policy")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.black.opacity(0.8))
+
+                        Button(action: { openPrivacyPolicy() }) {
+                            Text("Privacy Policy")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.black.opacity(0.8))
+                                .underline()
+                        }
                     }
                 }
                 .padding(.bottom, 32)
@@ -142,14 +186,53 @@ struct AuthView: View {
             logoScale = 1.0
             buttonsOpacity = 1.0
         }
+        .sheet(isPresented: $showingSafari) {
+            if let url = safariURL {
+                SafariView(url: url)
+            }
+        }
+        .alert("Authentication Error", isPresented: $authViewModel.showingError) {
+            Button("OK") {
+                authViewModel.clearError()
+            }
+        } message: {
+            Text(authViewModel.errorMessage ?? "An unexpected error occurred")
+        }
     }
 
     private func handleGoogleSignIn() {
+        // Prevent double taps
+        guard !authViewModel.isAuthenticating else { return }
+        
         guard let root = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
-            .first?.windows.first?.rootViewController else { return }
+            .first?.windows.first?.rootViewController else {
+            authViewModel.showError("Unable to access window for authentication")
+            return
+        }
         authViewModel.signInWithGoogle(presenting: root)
     }
+    
+    private func openTermsOfService() {
+        safariURL = URL(string: "https://recipewallet.ai/terms")
+        showingSafari = true
+    }
+    
+    private func openPrivacyPolicy() {
+        safariURL = URL(string: "https://recipewallet.ai/privacy")
+        showingSafari = true
+    }
+}
+
+// MARK: - Safari View for In-App Browser
+struct SafariView: UIViewControllerRepresentable {
+    let url: URL
+    
+    func makeUIViewController(context: Context) -> SFSafariViewController {
+        return SFSafariViewController(url: url)
+    }
+    
+    func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
 }
 
 #Preview {
