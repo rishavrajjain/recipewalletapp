@@ -614,6 +614,7 @@ class RecipeStore: ObservableObject {
     }
     
     @Published var filteredRecipes: [Recipe] = []
+    @Published var newlyImportedCollections: Set<String> = [] // Track newly imported collections for glowing effect
     @Published var searchText = "" {
         didSet { filterRecipes() }
     }
@@ -711,9 +712,17 @@ class RecipeStore: ObservableObject {
     
     // MARK: Collection Management
     
-    func createCollection(named name: String) {
-        let newCollection = Collection(name: name)
+    func createCollection(named name: String) -> Bool {
+        let trimmedName = name.trimmingCharacters(in: .whitespaces)
+        
+        // Check if collection with this name already exists
+        if collections.contains(where: { $0.name.lowercased() == trimmedName.lowercased() }) {
+            return false // Failed to create - duplicate name
+        }
+        
+        let newCollection = Collection(name: trimmedName)
         collections.insert(newCollection, at: 0)
+        return true // Success
     }
     
     func deleteCollection(_ collection: Collection) {
@@ -723,13 +732,17 @@ class RecipeStore: ObservableObject {
     }
     
     private func ensureMealPrepsCollectionExists() {
-        if !collections.contains(where: { $0.name == "Meal Preps" }) {
+        // Check if any Meal Preps collection exists (case-insensitive)
+        if !collections.contains(where: { $0.name.lowercased() == "meal preps" }) {
             // Create Meal Preps collection with all existing recipes
             let mealPreps = Collection(
                 name: "Meal Preps",
                 recipeIDs: recipes.map { $0.id }
             )
             collections.append(mealPreps)
+            print("📱 Created Meal Preps collection with \(mealPreps.recipeIDs.count) recipes")
+        } else {
+            print("📱 Meal Preps collection already exists, skipping creation")
         }
     }
     
@@ -819,6 +832,14 @@ class RecipeStore: ObservableObject {
         importError = (false, "")
         loadingRecipeName = customName.trimmingCharacters(in: .whitespacesAndNewlines)
         
+        // Check if this is a collection share link
+        if isCollectionShareLink(url) {
+            let collectionId = extractCollectionId(from: url)
+            startCollectionImport(collectionId: collectionId)
+            return
+        }
+        
+        // Regular recipe import flow
         importTask = Task {
             do {
                 let recipe = try await apiService.importRecipeFromReel(reelURL: url)
@@ -833,6 +854,131 @@ class RecipeStore: ObservableObject {
                 throw error
             }
         }
+    }
+    
+    // MARK: Collection Import Flow
+    
+    private func isCollectionShareLink(_ url: String) -> Bool {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.contains("recipewallet.ai/") && !trimmed.contains("/recipe/")
+    }
+    
+    private func extractCollectionId(from url: String) -> String {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        // Handle both http and https, with or without www
+        if let range = trimmed.range(of: "recipewallet.ai/") {
+            let idPart = String(trimmed[range.upperBound...])
+            // Remove any query parameters or fragments
+            let cleanId = idPart.components(separatedBy: ["?", "#"]).first ?? idPart
+            return cleanId.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        
+        return ""
+    }
+    
+    private func startCollectionImport(collectionId: String) {
+        guard !collectionId.isEmpty else {
+            handleImportError(NSError(domain: "ImportError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid collection link"]))
+            return
+        }
+        
+        loadingRecipeName = "Importing collection..."
+        
+        RecipeCloudStore.shared.fetchCollection(id: collectionId) { [weak self] collection, recipes in
+            DispatchQueue.main.async {
+                self?.completeCollectionImport(collection: collection, recipes: recipes)
+            }
+        }
+    }
+    
+    private func completeCollectionImport(collection: Collection?, recipes: [Recipe]) {
+        guard let collection = collection else {
+            handleImportError(NSError(domain: "ImportError", code: 2, userInfo: [NSLocalizedDescriptionKey: "Collection not found or not accessible"]))
+            return
+        }
+        
+        print("📥 Importing collection: '\(collection.name)' with \(recipes.count) recipes")
+        
+        // Filter out duplicate recipes (check by name)
+        let existingRecipeNames = Set(self.recipes.map { $0.name.lowercased() })
+        let recipesToImport = recipes.filter { recipe in
+            !existingRecipeNames.contains(recipe.name.lowercased())
+        }
+        
+        print("📊 Duplicate check: \(recipes.count) total recipes, \(recipesToImport.count) new recipes to import, \(recipes.count - recipesToImport.count) duplicates skipped")
+        
+        // Import only new recipes with new IDs
+        var newRecipes: [Recipe] = []
+        var newRecipeIds: [String] = []
+        
+        for recipe in recipesToImport {
+            let newRecipe = Recipe(
+                id: UUID().uuidString,
+                name: recipe.name,
+                description: recipe.description,
+                imageUrl: recipe.imageUrl,
+                prepTime: recipe.prepTime,
+                cookTime: recipe.cookTime,
+                difficulty: recipe.difficulty,
+                nutrition: recipe.nutrition,
+                ingredients: recipe.ingredients,
+                steps: recipe.steps,
+                tags: recipe.tags,
+                isFromReel: recipe.isFromReel,
+                extractedFrom: recipe.extractedFrom,
+                creatorHandle: recipe.creatorHandle,
+                creatorName: recipe.creatorName,
+                originalUrl: recipe.originalUrl
+            )
+            
+            newRecipes.append(newRecipe)
+            newRecipeIds.append(newRecipe.id)
+        }
+        
+        // Also include existing recipes in collection if they were in the original
+        for recipe in recipes {
+            if existingRecipeNames.contains(recipe.name.lowercased()) {
+                // Find the existing recipe and add its ID
+                if let existingRecipe = self.recipes.first(where: { $0.name.lowercased() == recipe.name.lowercased() }) {
+                    newRecipeIds.append(existingRecipe.id)
+                }
+            }
+        }
+        
+        // Create a new collection with original name (no custom naming)
+        let newCollection = Collection(
+            id: UUID().uuidString,
+            name: collection.name, // Use original name directly
+            description: collection.description,
+            coverImageUrl: collection.coverImageUrl,
+            recipeIDs: newRecipeIds,
+            tags: collection.tags,
+            createdBy: "" // Will be set when saved to cloud
+        )
+        
+        // Add to local storage
+        self.recipes.insert(contentsOf: newRecipes, at: 0)
+        self.collections.insert(newCollection, at: 0)
+        
+        // Mark as newly imported for glowing effect
+        newlyImportedCollections.insert(newCollection.id)
+        
+        // Remove glow effect after 3 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            self.newlyImportedCollections.remove(newCollection.id)
+        }
+        
+        print("📥 Imported collection '\(newCollection.name)' with \(newRecipes.count) new recipes and \(newRecipeIds.count - newRecipes.count) existing recipes")
+        
+        // Update UI
+        filterRecipes()
+        
+        // Reset state
+        isProcessingReel = false
+        pendingCustomName = ""
+        loadingRecipeName = ""
+        importTask = nil
     }
     
     private func completeImport(with recipe: Recipe) {
@@ -1010,10 +1156,8 @@ class RecipeStore: ObservableObject {
                         print("✅ Updated shopping list from Firestore")
                     }
                     
-                    // Ensure collections are properly set up
-                    print("🔧 Ensuring Meal Preps collection exists...")
-                    self.ensureMealPrepsCollectionExists()
-                    print("📊 After ensureMealPrepsCollectionExists: \(self.recipes.count) recipes, \(self.collections.count) collections")
+                    // Collections already loaded from Firestore, no need to ensure Meal Preps again
+                    print("📊 Loaded collections from Firestore: \(self.collections.count) collections")
                     
                     // 🔥 CRITICAL FIX: Refresh filtered recipes for UI display
                     print("🔄 Refreshing filtered recipes for UI display...")
@@ -2177,6 +2321,7 @@ struct NewCollectionSheet: View {
     @Environment(\.dismiss) private var dismiss
     
     @State private var name: String = ""
+    @State private var showingDuplicateError = false
     @FocusState private var isFocused: Bool
     
     var body: some View {
@@ -2185,6 +2330,18 @@ struct NewCollectionSheet: View {
                 Section(header: Text("Collection Name")) {
                     TextField("e.g., Weeknight Meals", text: $name)
                         .focused($isFocused)
+                }
+                
+                if showingDuplicateError {
+                    Section {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                            Text("A collection with this name already exists. Please choose a different name.")
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        }
+                    }
                 }
             }
             .navigationTitle("New Collection")
@@ -2200,10 +2357,23 @@ struct NewCollectionSheet: View {
                 }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Add") {
-                        store.createCollection(named: name)
-                        dismiss()
+                        let success = store.createCollection(named: name)
+                        if success {
+                            dismiss()
+                        } else {
+                            showingDuplicateError = true
+                            // Give haptic feedback
+                            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                            impactFeedback.impactOccurred()
+                        }
                     }
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .onChange(of: name) { _ in
+                // Hide error when user starts typing again
+                if showingDuplicateError {
+                    showingDuplicateError = false
                 }
             }
         }
@@ -2302,13 +2472,22 @@ struct ShareCollectionSheet: View {
     let collection: Collection
     
     @State private var shareText = ""
-    @State private var showingActivityView = false
+    @State private var showingLinkAndInstructionsSheet = false
+    @State private var showingLinkOnlySheet = false
+    @State private var isSharing = false
+    @State private var shareLink = ""
+    @State private var showingCopyFeedback = false
     
     private var recipesInCollection: [Recipe] {
         store.recipes(in: collection)
     }
     
+    private var collectionShareLink: String {
+        return "https://recipewallet.ai/\(collection.id)"
+    }
+    
     private var shareContent: String {
+        let link = collectionShareLink
         var content = "🍽️ Check out my '\(collection.name)' collection from Recipe Wallet!\n\n"
         
         if recipesInCollection.isEmpty {
@@ -2316,17 +2495,17 @@ struct ShareCollectionSheet: View {
         } else {
             content += "📋 \(recipesInCollection.count) delicious \(recipesInCollection.count == 1 ? "recipe" : "recipes"):\n\n"
             
-            for (index, recipe) in recipesInCollection.prefix(5).enumerated() {
+            for (index, recipe) in recipesInCollection.prefix(3).enumerated() {
                 let timeText = recipe.totalTime.map { "\($0) min" } ?? ""
                 content += "\(index + 1). \(recipe.name)" + (timeText.isEmpty ? "" : " (\(timeText))") + "\n"
             }
             
-            if recipesInCollection.count > 5 {
-                content += "... and \(recipesInCollection.count - 5) more!\n"
+            if recipesInCollection.count > 3 {
+                content += "... and \(recipesInCollection.count - 3) more!\n"
             }
         }
         
-        content += "\n✨ Get Recipe Wallet to organize your recipes!"
+        content += "\n🔗 Import link: \(link)\n\n📱 To import: Paste this link in the Import tab of Recipe Wallet!"
         return content
     }
     
@@ -2338,13 +2517,14 @@ struct ShareCollectionSheet: View {
                     HStack(spacing: 12) {
                         Image(systemName: "square.and.arrow.up.circle.fill")
                             .font(.system(size: 32))
-                            .foregroundColor(.blue)
+                            .foregroundColor(.black)
                         
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Share Collection")
                                 .font(.title2)
                                 .fontWeight(.bold)
-                            Text("Spread the recipe love! 💙")
+                                .foregroundColor(.black)
+                            Text("Share your recipes with others! 🍽️")
                                 .font(.subheadline)
                                 .foregroundColor(.secondary)
                         }
@@ -2376,54 +2556,78 @@ struct ShareCollectionSheet: View {
                 
                 // Share Options
                 VStack(spacing: 16) {
+                    // Share Collection Link & Instructions (Primary)
                     Button(action: {
-                        showingActivityView = true
+                        showingLinkAndInstructionsSheet = true
                     }) {
                         HStack(spacing: 12) {
                             Image(systemName: "square.and.arrow.up")
                                 .font(.title3)
-                            Text("Share Collection")
+                            Text("Share Link & Instructions")
                                 .font(.headline)
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
                         .background(
                             LinearGradient(
-                                gradient: Gradient(colors: [Color.blue, Color.blue.opacity(0.8)]),
+                                gradient: Gradient(colors: [Color.brandYellow, Color.brandYellow.opacity(0.8)]),
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
                         .cornerRadius(12)
-                        .shadow(color: .blue.opacity(0.3), radius: 4, x: 0, y: 2)
+                        .shadow(color: Color.brandYellow.opacity(0.3), radius: 4, x: 0, y: 2)
                     }
                     .buttonStyle(.plain)
                     
+                    // Share Collection Link Only (Secondary)
                     Button(action: {
-                        UIPasteboard.general.string = shareContent
-                        // Show a brief success feedback
-                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-                        impactFeedback.impactOccurred()
+                        showingLinkOnlySheet = true
                     }) {
                         HStack(spacing: 12) {
-                            Image(systemName: "doc.on.clipboard")
+                            Image(systemName: "link")
                                 .font(.title3)
-                            Text("Copy to Clipboard")
+                            Text("Share Collection Link")
                                 .font(.headline)
                         }
-                        .foregroundColor(.blue)
+                        .foregroundColor(.black)
                         .frame(maxWidth: .infinity)
                         .frame(height: 50)
-                        .background(Color.blue.opacity(0.1))
+                        .background(Color.black.opacity(0.1))
                         .cornerRadius(12)
                         .overlay(
                             RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.blue.opacity(0.3), lineWidth: 1)
+                                .stroke(Color.black.opacity(0.3), lineWidth: 1)
                         )
                     }
                     .buttonStyle(.plain)
                 }
+                .padding(.horizontal)
+                
+                // Import Instructions
+                VStack(spacing: 8) {
+                    HStack {
+                        Image(systemName: "info.circle.fill")
+                            .font(.title3)
+                            .foregroundColor(.brandYellow)
+                        
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("How to Import")
+                                .font(.headline)
+                                .foregroundColor(.black)
+                            Text("Recipients can paste the link in the Import tab to add this collection to their Recipe Wallet")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.vertical, 12)
+                .background(Color.brandYellow.opacity(0.1))
+                .cornerRadius(12)
                 .padding(.horizontal)
                 
                 Spacer()
@@ -2436,8 +2640,11 @@ struct ShareCollectionSheet: View {
                 }
             }
         }
-        .sheet(isPresented: $showingActivityView) {
+        .sheet(isPresented: $showingLinkAndInstructionsSheet) {
             ActivityViewController(activityItems: [shareContent])
+        }
+        .sheet(isPresented: $showingLinkOnlySheet) {
+            ActivityViewController(activityItems: [collectionShareLink])
         }
     }
 }
@@ -2543,7 +2750,7 @@ struct ImportReelSheet: View {
     
     private var isLinkValid: Bool {
         let trimmed = reelLink.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Accept any URL that looks like a valid web link
+        // Accept any URL that looks like a valid web link, including collection share links
         return !trimmed.isEmpty && (
             trimmed.hasPrefix("http://") ||
             trimmed.hasPrefix("https://") ||
@@ -2552,18 +2759,31 @@ struct ImportReelSheet: View {
             trimmed.contains(".net") ||
             trimmed.contains("tiktok.com") ||
             trimmed.contains("instagram.com") ||
-            trimmed.contains("youtube.com")
+            trimmed.contains("youtube.com") ||
+            trimmed.contains("recipewallet.ai/")
         )
+    }
+    
+    private func isCollectionLink(_ url: String) -> Bool {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.contains("recipewallet.ai/") && !trimmed.contains("/recipe/")
     }
     
     private func handlePrimaryAction() {
         switch currentStep {
         case .linkInput:
-            withAnimation(.easeInOut(duration: 0.3)) {
-                currentStep = .nameInput
-                isLinkFieldFocused = false
+            // Skip name input for collection links - import directly
+            if isCollectionLink(reelLink) {
+                recipeStore.startImport(url: reelLink, customName: "")
+                dismiss()
+            } else {
+                // Regular recipe import - go to name input
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    currentStep = .nameInput
+                    isLinkFieldFocused = false
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { isNameFieldFocused = true }
             }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { isNameFieldFocused = true }
             
         case .nameInput:
             recipeStore.startImport(url: reelLink, customName: customName)
@@ -2702,9 +2922,14 @@ struct CollectionCard: View {
     @EnvironmentObject var store: RecipeStore
     @State private var showingDeleteAlert = false
     @State private var showingShareSheet = false
+    @State private var glowOpacity: Double = 0.0
     
     private var recipeCount: Int {
         store.recipes(in: collection).count
+    }
+    
+    private var isNewlyImported: Bool {
+        store.newlyImportedCollections.contains(collection.id)
     }
     
     var body: some View {
@@ -2772,6 +2997,37 @@ struct CollectionCard: View {
         .background(.background)
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.08), radius: 6, y: 3)
+        .overlay(
+            // Glowing border for newly imported collections
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(
+                    LinearGradient(
+                        colors: [Color.brandYellow, Color.brandYellow.opacity(0.3)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: isNewlyImported ? 3 : 0
+                )
+                .opacity(isNewlyImported ? glowOpacity : 0)
+        )
+        .onAppear {
+            if isNewlyImported {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    glowOpacity = 1.0
+                }
+            }
+        }
+        .onChange(of: isNewlyImported) { newValue in
+            if newValue {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    glowOpacity = 1.0
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    glowOpacity = 0.0
+                }
+            }
+        }
         .alert("Delete '\(collection.name)'?", isPresented: $showingDeleteAlert) {
             Button("Delete", role: .destructive, action: onDelete)
             Button("Cancel", role: .cancel) { }

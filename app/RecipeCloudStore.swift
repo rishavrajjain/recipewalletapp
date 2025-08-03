@@ -2,6 +2,15 @@ import Foundation
 import FirebaseFirestore
 import FirebaseAuth
 
+// Array chunking extension for Firestore batch queries
+extension Array {
+    func chunked(into size: Int) -> [[Element]] {
+        return stride(from: 0, to: count, by: size).map {
+            Array(self[$0..<Swift.min($0 + size, count)])
+        }
+    }
+}
+
 /// 🎯 Simple, clean cloud store - just the essentials
 class RecipeCloudStore {
     static let shared = RecipeCloudStore()
@@ -59,7 +68,7 @@ class RecipeCloudStore {
         var loadedCollections: [Collection] = []
         var loadedShoppingList: [ShoppingListItem] = []
         
-        // 📱 Load shopping list + profile from user document
+        // 📱 Load shopping list + profile + ownership lists from user document
         group.enter()
         db.collection("users").document(uid).getDocument { [weak self] snapshot, _ in
             defer { group.leave() }
@@ -78,6 +87,12 @@ class RecipeCloudStore {
                     let decoder = JSONDecoder()
                     decoder.dateDecodingStrategy = .iso8601
                     self?.cachedProfile = try? decoder.decode(UserProfile.self, from: jsonData)
+                }
+                
+                // Log ownership info for debugging
+                if let ownedRecipeIds = data["ownedRecipeIds"] as? [String],
+                   let ownedCollectionIds = data["ownedCollectionIds"] as? [String] {
+                    print("📊 User owns \(ownedRecipeIds.count) recipes, \(ownedCollectionIds.count) collections (from user doc)")
                 }
             }
         }
@@ -152,12 +167,18 @@ class RecipeCloudStore {
            let json = try? JSONSerialization.jsonObject(with: encoded) {
             payload["shoppingList"] = json
         }
+        
+        // Save ownership lists for better tracking
+        let recipeIds = cachedUserRecipes.map { $0.id }
+        let collectionIds = cachedUserCollections.map { $0.id }
+        payload["ownedRecipeIds"] = recipeIds
+        payload["ownedCollectionIds"] = collectionIds
 
         db.collection("users").document(uid).setData(payload, merge: true) { error in
             if let error = error {
-                print("❌ Failed to save shopping list: \(error)")
+                print("❌ Failed to save user data: \(error)")
             } else {
-                print("✅ Saved shopping list (\(shoppingList.count) items)")
+                print("✅ Saved user data: \(shoppingList.count) shopping items, \(recipeIds.count) recipes, \(collectionIds.count) collections")
             }
         }
     }
@@ -219,6 +240,24 @@ class RecipeCloudStore {
         )
     }
     
+    /// Get ownership lists for the current user
+    func getOwnershipLists() -> (recipeIds: [String], collectionIds: [String]) {
+        return (
+            recipeIds: cachedUserRecipes.map { $0.id },
+            collectionIds: cachedUserCollections.map { $0.id }
+        )
+    }
+    
+    /// Check if current user owns a specific collection
+    func ownsCollection(id: String) -> Bool {
+        return cachedUserCollections.contains { $0.id == id }
+    }
+    
+    /// Check if current user owns a specific recipe
+    func ownsRecipe(id: String) -> Bool {
+        return cachedUserRecipes.contains { $0.id == id }
+    }
+    
     func getUserDietaryPreference() -> String? {
         return cachedProfile?.foodPreference
     }
@@ -230,5 +269,72 @@ class RecipeCloudStore {
     
     func getPersonalizedGreeting() -> String {
         return "Recipe Wallet"
+    }
+    
+    // ========================================================================
+    // MARK: - 🔗 Collection Sharing
+    // ========================================================================
+    
+    /// Fetch a specific collection by ID from Firestore (for sharing/importing)
+    func fetchCollection(id: String, completion: @escaping (Collection?, [Recipe]) -> Void) {
+        // First fetch the collection
+        db.collection("collections").document(id).getDocument { [weak self] snapshot, error in
+            guard let self = self else { 
+                completion(nil, [])
+                return 
+            }
+            
+            if let error = error {
+                print("❌ Failed to fetch collection \(id): \(error)")
+                completion(nil, [])
+                return
+            }
+            
+            guard let data = snapshot?.data(),
+                  let collection = try? snapshot?.data(as: Collection.self) else {
+                print("❌ Collection \(id) not found or invalid")
+                completion(nil, [])
+                return
+            }
+            
+            // Now fetch all recipes in this collection
+            if collection.recipeIDs.isEmpty {
+                completion(collection, [])
+                return
+            }
+            
+            // Firestore 'in' queries are limited to 30 items, so we'll batch if needed
+            let batchSize = 30
+            let batches = collection.recipeIDs.chunked(into: batchSize)
+            var allRecipes: [Recipe] = []
+            let group = DispatchGroup()
+            
+            for batch in batches {
+                group.enter()
+                self.db.collection("recipes")
+                    .whereField(FieldPath.documentID(), in: Array(batch))
+                    .getDocuments { snapshot, error in
+                        defer { group.leave() }
+                        
+                        if let error = error {
+                            print("❌ Failed to fetch recipe batch: \(error)")
+                            return
+                        }
+                        
+                        if let documents = snapshot?.documents {
+                            for doc in documents {
+                                if let recipe = try? doc.data(as: Recipe.self) {
+                                    allRecipes.append(recipe)
+                                }
+                            }
+                        }
+                    }
+            }
+            
+            group.notify(queue: .main) {
+                print("✅ Fetched collection '\(collection.name)' with \(allRecipes.count) recipes")
+                completion(collection, allRecipes)
+            }
+        }
     }
 }
