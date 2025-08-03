@@ -10,6 +10,7 @@ import CryptoKit
 class AuthViewModel: NSObject, ObservableObject {
     /// The currently authenticated Firebase user
     @Published var user: User?
+    @Published var isAuthenticating = false
 
     private var authStateHandle: AuthStateDidChangeListenerHandle?
     private var currentNonce: String?
@@ -18,7 +19,21 @@ class AuthViewModel: NSObject, ObservableObject {
         super.init()
         // Observe authentication state changes
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
-            self?.user = user
+            DispatchQueue.main.async {
+                // Prevent rapid state changes during auth flow
+                if self?.isAuthenticating == true && user != nil {
+                    // Add small delay to ensure smooth transition
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                        self?.user = user
+                        self?.isAuthenticating = false
+                    }
+                } else {
+                    self?.user = user
+                    if user == nil {
+                        self?.isAuthenticating = false
+                    }
+                }
+            }
         }
     }
 
@@ -30,32 +45,52 @@ class AuthViewModel: NSObject, ObservableObject {
 
     /// Starts the Google sign in flow
     func signInWithGoogle(presenting: UIViewController) {
-        guard let clientID = FirebaseApp.app()?.options.clientID else { return }
+        isAuthenticating = true
+        
+        guard let clientID = FirebaseApp.app()?.options.clientID else { 
+            isAuthenticating = false
+            return 
+        }
+        
         let config = GIDConfiguration(clientID: clientID)
         GIDSignIn.sharedInstance.configuration = config
 
-        GIDSignIn.sharedInstance.signIn(withPresenting: presenting) { result, error in
+        GIDSignIn.sharedInstance.signIn(withPresenting: presenting) { [weak self] result, error in
             if let error = error {
                 print("Google sign in failed: \(error.localizedDescription)")
+                DispatchQueue.main.async {
+                    self?.isAuthenticating = false
+                }
                 return
             }
             guard
                 let idToken = result?.user.idToken?.tokenString,
                 let accessToken = result?.user.accessToken.tokenString
-            else { return }
+            else { 
+                DispatchQueue.main.async {
+                    self?.isAuthenticating = false
+                }
+                return 
+            }
 
             let credential = GoogleAuthProvider.credential(withIDToken: idToken,
                                                            accessToken: accessToken)
-            Auth.auth().signIn(with: credential) { _, error in
+            Auth.auth().signIn(with: credential) { [weak self] _, error in
                 if let error = error {
                     print("Firebase auth with Google credential failed: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        self?.isAuthenticating = false
+                    }
                 }
+                // Success case is handled by auth state listener
             }
         }
     }
 
     /// Prepares the Apple sign in request with a cryptographic nonce
     func handleAppleSignIn(request: ASAuthorizationAppleIDRequest) {
+        isAuthenticating = true
+        
         let nonce = randomNonceString()
         currentNonce = nonce
         request.requestedScopes = [.fullName, .email]
@@ -71,18 +106,30 @@ class AuthViewModel: NSObject, ObservableObject {
                 let nonce = currentNonce,
                 let appleIDToken = appleIDCredential.identityToken,
                 let idTokenString = String(data: appleIDToken, encoding: .utf8)
-            else { return }
+            else { 
+                DispatchQueue.main.async {
+                    self.isAuthenticating = false
+                }
+                return 
+            }
 
             let credential = OAuthProvider.appleCredential(withIDToken: idTokenString,
                                                            rawNonce: nonce,
                                                            fullName: appleIDCredential.fullName)
-            Auth.auth().signIn(with: credential) { _, error in
+            Auth.auth().signIn(with: credential) { [weak self] _, error in
                 if let error = error {
                     print("Apple sign in failed: \(error.localizedDescription)")
+                    DispatchQueue.main.async {
+                        self?.isAuthenticating = false
+                    }
                 }
+                // Success case is handled by auth state listener
             }
         case .failure(let error):
             print("Apple sign in request failed: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                self.isAuthenticating = false
+            }
         }
     }
 
@@ -91,6 +138,7 @@ class AuthViewModel: NSObject, ObservableObject {
         do {
             try Auth.auth().signOut()
             user = nil
+            isAuthenticating = false
         } catch {
             print("Error signing out: \(error.localizedDescription)")
         }
@@ -99,7 +147,8 @@ class AuthViewModel: NSObject, ObservableObject {
     // MARK: - Nonce utilities
     private func randomNonceString(length: Int = 32) -> String {
         precondition(length > 0)
-        let charset: [Character] = Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
+        let charset: [Character] =
+        Array("0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._")
         var result = ""
         var remainingLength = length
 
@@ -108,7 +157,9 @@ class AuthViewModel: NSObject, ObservableObject {
                 var random: UInt8 = 0
                 let errorCode = SecRandomCopyBytes(kSecRandomDefault, 1, &random)
                 if errorCode != errSecSuccess {
-                    fatalError("Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)")
+                    fatalError(
+                        "Unable to generate nonce. SecRandomCopyBytes failed with OSStatus \(errorCode)"
+                    )
                 }
                 return random
             }
@@ -134,6 +185,7 @@ class AuthViewModel: NSObject, ObservableObject {
         let hashString = hashedData.compactMap {
             String(format: "%02x", $0)
         }.joined()
+
         return hashString
     }
 }

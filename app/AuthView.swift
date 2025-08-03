@@ -56,7 +56,7 @@ struct AuthView: View {
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundColor(.black)
                         
-                        Text("Your food journey starts here")
+                        Text("Your culinary journey starts here")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(.black.opacity(0.7))
                     }
@@ -70,11 +70,17 @@ struct AuthView: View {
                     // Google Sign In Button
                     Button(action: handleGoogleSignIn) {
                         HStack(spacing: 12) {
-                            Image(systemName: "globe")
-                                .font(.system(size: 20, weight: .medium))
-                                .foregroundColor(.black.opacity(0.8))
-                            
-                            Text("Continue with Google")
+                            if authViewModel.isAuthenticating {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .tint(.black.opacity(0.8))
+                            } else {
+                                Image(systemName: "globe")
+                                    .font(.system(size: 20, weight: .medium))
+                                    .foregroundColor(.black.opacity(0.8))
+                            }
+
+                            Text(authViewModel.isAuthenticating ? "Signing in..." : "Continue with Google")
                                 .font(.system(size: 18, weight: .semibold))
                                 .foregroundColor(.black)
                         }
@@ -82,10 +88,11 @@ struct AuthView: View {
                         .frame(height: 56)
                         .background(
                             RoundedRectangle(cornerRadius: 16)
-                                .fill(Color.white)
+                                .fill(authViewModel.isAuthenticating ? Color.white.opacity(0.7) : Color.white)
                                 .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
                         )
                     }
+                    .disabled(authViewModel.isAuthenticating)
                     .padding(.horizontal, 32)
                     
                     // Apple Sign In Button
@@ -99,6 +106,8 @@ struct AuthView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
                     .padding(.horizontal, 32)
+                    .disabled(authViewModel.isAuthenticating)
+                    .opacity(authViewModel.isAuthenticating ? 0.6 : 1.0)
                 }
                 .opacity(buttonsOpacity)
                 .animation(.easeInOut(duration: 0.8).delay(0.4), value: buttonsOpacity)
