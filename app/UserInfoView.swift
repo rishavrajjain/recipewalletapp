@@ -309,6 +309,11 @@ struct UserInfoView: View {
                 populateFromFirebaseAuth()
                 // Also check UserDefaults for any legacy data
                 loadLegacyUserData()
+                
+                // 🎯 AUTO-SAVE: If we have useful data from auth, save it automatically
+                if shouldAutoSaveProfile() {
+                    await autoSaveProfileFromAuth()
+                }
             }
         } catch {
             errorMessage = "Failed to load profile: \(error.localizedDescription)"
@@ -316,6 +321,11 @@ struct UserInfoView: View {
             // Fallback to Firebase Auth data
             populateFromFirebaseAuth()
             loadLegacyUserData()
+            
+            // Try to auto-save even on error
+            if shouldAutoSaveProfile() {
+                await autoSaveProfileFromAuth()
+            }
         }
         
         isLoading = false
@@ -431,6 +441,38 @@ struct UserInfoView: View {
         }
         
         isSaving = false
+    }
+    
+    // Check if we have enough data from auth to auto-save
+    private func shouldAutoSaveProfile() -> Bool {
+        return !userProfile.name.isEmpty || !userProfile.email.isEmpty
+    }
+    
+    // Auto-save profile with auth data (silent, no UI feedback)
+    @MainActor
+    private func autoSaveProfileFromAuth() async {
+        // Update the profile model with current form data
+        userProfile.name = userName.trimmingCharacters(in: .whitespacesAndNewlines)
+        userProfile.age = userAge.trimmingCharacters(in: .whitespacesAndNewlines)
+        userProfile.weight = userWeight.trimmingCharacters(in: .whitespacesAndNewlines)
+        userProfile.foodPreference = foodPreference.rawValue
+        userProfile.lastUpdated = Date()
+        
+        do {
+            // Save to Firestore silently
+            try await UserProfileStore.shared.saveProfile(userProfile)
+            
+            // Also save to UserDefaults for offline access
+            UserDefaults.standard.set(userProfile.name, forKey: "userName")
+            UserDefaults.standard.set(userProfile.age, forKey: "userAge")
+            UserDefaults.standard.set(userProfile.weight, forKey: "userWeight")
+            UserDefaults.standard.set(userProfile.foodPreference, forKey: "foodPreference")
+            
+            print("✅ Auto-saved profile with auth data: \(userProfile.name), \(userProfile.email)")
+        } catch {
+            print("❌ Failed to auto-save profile: \(error.localizedDescription)")
+            // Don't show error to user for auto-save failures
+        }
     }
 }
 

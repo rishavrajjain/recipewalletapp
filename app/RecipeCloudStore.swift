@@ -2,7 +2,7 @@ import Foundation
 import FirebaseFirestore
 import FirebaseAuth
 
-/// Handles syncing recipe data with Firestore for the authenticated user
+/// 🎯 Simple, clean cloud store - just the essentials
 class RecipeCloudStore {
     static let shared = RecipeCloudStore()
     private let db = Firestore.firestore()
@@ -10,10 +10,10 @@ class RecipeCloudStore {
     private var authListener: AuthStateDidChangeListenerHandle?
     private var currentUID: String?
 
-    /// In-memory caches for the signed-in user
-    private var cachedRecipes: [Recipe] = []
-    private var cachedCollections: [Collection] = []
-    private var cachedList: [ShoppingListItem] = []
+    /// In-memory caches
+    private var cachedUserRecipes: [Recipe] = []
+    private var cachedUserCollections: [Collection] = []
+    private var cachedShoppingList: [ShoppingListItem] = []
     private var cachedProfile: UserProfile?
 
     private init() {
@@ -21,11 +21,7 @@ class RecipeCloudStore {
             guard let self = self else { return }
             self.currentUID = user?.uid
             if user == nil {
-                // Clear any cached data when signing out
-                self.cachedRecipes = []
-                self.cachedCollections = []
-                self.cachedList = []
-                self.cachedProfile = nil
+                self.clearCache()
             }
         }
     }
@@ -35,117 +31,203 @@ class RecipeCloudStore {
             Auth.auth().removeStateDidChangeListener(handle)
         }
     }
+    
+    private func clearCache() {
+        cachedUserRecipes = []
+        cachedUserCollections = []
+        cachedShoppingList = []
+        cachedProfile = nil
+    }
 
-    /// Loads recipes, collections and shopping list for current user
+    // ========================================================================
+    // MARK: - 📱 Load User Data 
+    // ========================================================================
+    
     func load(completion: @escaping ([Recipe], [Collection], [ShoppingListItem]) -> Void) {
         guard let uid = currentUID else {
             completion([], [], [])
             return
         }
 
+        loadUserData(uid: uid, completion: completion)
+    }
+    
+    private func loadUserData(uid: String, completion: @escaping ([Recipe], [Collection], [ShoppingListItem]) -> Void) {
+        let group = DispatchGroup()
+        
+        var loadedRecipes: [Recipe] = []
+        var loadedCollections: [Collection] = []
+        var loadedShoppingList: [ShoppingListItem] = []
+        
+        // 📱 Load shopping list + profile from user document
+        group.enter()
         db.collection("users").document(uid).getDocument { [weak self] snapshot, _ in
-            let decoder = JSONDecoder()
-            var loadedRecipes: [Recipe] = []
-            var loadedCollections: [Collection] = []
-            var loadedList: [ShoppingListItem] = []
-
+            defer { group.leave() }
+            
             if let data = snapshot?.data() {
-                if let recipeData = data["recipes"],
-                   let jsonData = try? JSONSerialization.data(withJSONObject: recipeData),
-                   let decoded = try? decoder.decode([Recipe].self, from: jsonData) {
-                    loadedRecipes = decoded
-                }
-                if let collectionData = data["collections"],
-                   let jsonData = try? JSONSerialization.data(withJSONObject: collectionData),
-                   let decoded = try? decoder.decode([Collection].self, from: jsonData) {
-                    loadedCollections = decoded
-                }
+                // Load shopping list
                 if let listData = data["shoppingList"],
                    let jsonData = try? JSONSerialization.data(withJSONObject: listData),
-                   let decoded = try? decoder.decode([ShoppingListItem].self, from: jsonData) {
-                    loadedList = decoded
+                   let decoded = try? JSONDecoder().decode([ShoppingListItem].self, from: jsonData) {
+                    loadedShoppingList = decoded
                 }
                 
-                // Also load and cache user profile
+                // Load and cache user profile
                 if let profileData = data["profile"],
                    let jsonData = try? JSONSerialization.data(withJSONObject: profileData) {
+                    let decoder = JSONDecoder()
                     decoder.dateDecodingStrategy = .iso8601
                     self?.cachedProfile = try? decoder.decode(UserProfile.self, from: jsonData)
                 }
             }
-
-            DispatchQueue.main.async {
-                self?.cachedRecipes = loadedRecipes
-                self?.cachedCollections = loadedCollections
-                self?.cachedList = loadedList
-                completion(loadedRecipes, loadedCollections, loadedList)
+        }
+        
+        // 🍳 Load recipes from recipes collection
+        group.enter()
+        db.collection("recipes").whereField("createdBy", isEqualTo: uid).getDocuments { snapshot, _ in
+            defer { group.leave() }
+            
+            if let documents = snapshot?.documents {
+                for doc in documents {
+                    if let recipe = try? doc.data(as: Recipe.self) {
+                        loadedRecipes.append(recipe)
+                    }
+                }
             }
+        }
+        
+        // 📚 Load collections from collections collection
+        group.enter()
+        db.collection("collections").whereField("createdBy", isEqualTo: uid).getDocuments { snapshot, _ in
+            defer { group.leave() }
+            
+            if let documents = snapshot?.documents {
+                for doc in documents {
+                    if let collection = try? doc.data(as: Collection.self) {
+                        loadedCollections.append(collection)
+                    }
+                }
+            }
+        }
+        
+        group.notify(queue: .main) {
+            self.cachedUserRecipes = loadedRecipes
+            self.cachedUserCollections = loadedCollections
+            self.cachedShoppingList = loadedShoppingList
+            completion(loadedRecipes, loadedCollections, loadedShoppingList)
+            
+            print("✅ Loaded data:")
+            print("   📱 Shopping: \(loadedShoppingList.count) items")
+            print("   🍳 Recipes: \(loadedRecipes.count) from /recipes/")
+            print("   📚 Collections: \(loadedCollections.count) from /collections/")
         }
     }
 
-    /// Saves recipes, collections and shopping list for current user
+    // ========================================================================
+    // MARK: - 💾 Save User Data
+    // ========================================================================
+    
     func save(recipes: [Recipe], collections: [Collection], shoppingList: [ShoppingListItem]) {
         guard let uid = currentUID else { return }
 
+        // Save shopping list to user document
+        saveUserData(uid: uid, shoppingList: shoppingList)
+        
+        // Save recipes & collections to separate collections
+        saveRecipesAndCollections(uid: uid, recipes: recipes, collections: collections)
+        
+        // Update cache
+        cachedUserRecipes = recipes
+        cachedUserCollections = collections
+        cachedShoppingList = shoppingList
+    }
+    
+    private func saveUserData(uid: String, shoppingList: [ShoppingListItem]) {
         let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
         var payload: [String: Any] = [:]
 
-        if let encoded = try? encoder.encode(recipes),
-           let json = try? JSONSerialization.jsonObject(with: encoded) {
-            payload["recipes"] = json
-        }
-        if let encoded = try? encoder.encode(collections),
-           let json = try? JSONSerialization.jsonObject(with: encoded) {
-            payload["collections"] = json
-        }
+        // Save shopping list
         if let encoded = try? encoder.encode(shoppingList),
            let json = try? JSONSerialization.jsonObject(with: encoded) {
             payload["shoppingList"] = json
         }
 
-        db.collection("users").document(uid).setData(payload, merge: true)
-
-        cachedRecipes = recipes
-        cachedCollections = collections
-        cachedList = shoppingList
+        db.collection("users").document(uid).setData(payload, merge: true) { error in
+            if let error = error {
+                print("❌ Failed to save shopping list: \(error)")
+            } else {
+                print("✅ Saved shopping list (\(shoppingList.count) items)")
+            }
+        }
     }
     
-    /// Gets cached user profile (useful for quick access without additional Firestore calls)
+    private func saveRecipesAndCollections(uid: String, recipes: [Recipe], collections: [Collection]) {
+        let batch = db.batch()
+        
+        // Save recipes
+        for recipe in recipes {
+            var updatedRecipe = recipe
+            updatedRecipe.createdBy = uid
+            updatedRecipe.updatedAt = Date()
+            
+            let recipeRef = db.collection("recipes").document(recipe.id)
+            if let encoded = try? Firestore.Encoder().encode(updatedRecipe) {
+                batch.setData(encoded, forDocument: recipeRef, merge: true)
+            }
+        }
+        
+        // Save collections
+        for collection in collections {
+            var updatedCollection = collection
+            updatedCollection.createdBy = uid
+            updatedCollection.updatedAt = Date()
+            
+            let collectionRef = db.collection("collections").document(collection.id)
+            if let encoded = try? Firestore.Encoder().encode(updatedCollection) {
+                batch.setData(encoded, forDocument: collectionRef, merge: true)
+            }
+        }
+        
+        batch.commit { error in
+            if let error = error {
+                print("❌ Failed to save recipes/collections: \(error)")
+            } else {
+                print("✅ Saved \(recipes.count) recipes + \(collections.count) collections")
+            }
+        }
+    }
+
+    // ========================================================================
+    // MARK: - 👤 User Profile (The Important Stuff You Actually Use)
+    // ========================================================================
+    
     func getCachedProfile() -> UserProfile? {
         return cachedProfile
     }
     
-    /// Updates the cached profile when it's modified elsewhere
     func updateCachedProfile(_ profile: UserProfile) {
         cachedProfile = profile
     }
     
-    /// Gets user summary for analytics or personalization
     func getUserSummary() -> (recipesCount: Int, collectionsCount: Int, shoppingItemsCount: Int, hasProfile: Bool) {
         return (
-            recipesCount: cachedRecipes.count,
-            collectionsCount: cachedCollections.count,
-            shoppingItemsCount: cachedList.count,
+            recipesCount: cachedUserRecipes.count,
+            collectionsCount: cachedUserCollections.count,
+            shoppingItemsCount: cachedShoppingList.count,
             hasProfile: cachedProfile != nil
         )
     }
-}
-
-// MARK: - User Profile Extensions
-extension RecipeCloudStore {
     
-    /// Gets user's dietary preferences for recipe recommendations
     func getUserDietaryPreference() -> String? {
         return cachedProfile?.foodPreference
     }
     
-    /// Checks if user has completed their profile setup
     func isProfileComplete() -> Bool {
         guard let profile = cachedProfile else { return false }
         return !profile.name.isEmpty && !profile.age.isEmpty && !profile.weight.isEmpty
     }
     
-    /// Gets app title for navigation
     func getPersonalizedGreeting() -> String {
         return "Recipe Wallet"
     }

@@ -21,8 +21,142 @@ extension Notification.Name {
 }
 
 // ========================================================================
-// MARK: - Models
+// MARK: - Enhanced Models for Clean Architecture
 // ========================================================================
+
+// MARK: - Enhanced Recipe Model
+struct Recipe: Identifiable, Codable, Hashable, Equatable {
+    let id: String
+    var name: String
+    var description: String
+    var imageUrl: String
+    var prepTime: Int?
+    var cookTime: Int?
+    var difficulty: RecipeDifficulty?
+    var nutrition: Nutrition?
+    var ingredients: [Ingredient]
+    var steps: [String]
+    var tags: [String] = []
+    
+    // Clean metadata
+    var createdBy: String = ""
+    var createdAt: Date
+    var updatedAt: Date
+    
+    // Source tracking (for imported recipes)
+    var isFromReel: Bool = false
+    var extractedFrom: String?
+    var creatorHandle: String?
+    var creatorName: String?
+    var originalUrl: String?
+    
+    // Computed Properties
+    var totalTime: Int? {
+        guard let prep = prepTime, let cook = cookTime else { return nil }
+        return prep + cook
+    }
+    
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        description: String,
+        imageUrl: String = "",
+        prepTime: Int? = nil,
+        cookTime: Int? = nil,
+        difficulty: RecipeDifficulty? = .medium,
+        nutrition: Nutrition? = nil,
+        ingredients: [Ingredient] = [],
+        steps: [String] = [],
+        tags: [String] = [],
+        createdBy: String = "",
+        isFromReel: Bool = false,
+        extractedFrom: String? = nil,
+        creatorHandle: String? = nil,
+        creatorName: String? = nil,
+        originalUrl: String? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.imageUrl = imageUrl
+        self.prepTime = prepTime
+        self.cookTime = cookTime
+        self.difficulty = difficulty
+        self.nutrition = nutrition
+        self.ingredients = ingredients
+        self.steps = steps
+        self.tags = tags
+        self.createdBy = createdBy
+        self.createdAt = Date()
+        self.updatedAt = Date()
+        self.isFromReel = isFromReel
+        self.extractedFrom = extractedFrom
+        self.creatorHandle = creatorHandle
+        self.creatorName = creatorName
+        self.originalUrl = originalUrl
+    }
+}
+
+// MARK: - Enhanced Collection Model  
+struct Collection: Identifiable, Codable, Hashable {
+    let id: String
+    var name: String
+    var description: String = ""
+    var coverImageUrl: String = ""
+    var recipeIDs: [String] = []
+    var tags: [String] = []
+    
+    // Clean metadata
+    var createdBy: String = ""
+    var createdAt: Date
+    var updatedAt: Date
+    
+    init(
+        id: String = UUID().uuidString,
+        name: String,
+        description: String = "",
+        coverImageUrl: String = "",
+        recipeIDs: [String] = [],
+        tags: [String] = [],
+        createdBy: String = ""
+    ) {
+        self.id = id
+        self.name = name
+        self.description = description
+        self.coverImageUrl = coverImageUrl
+        self.recipeIDs = recipeIDs
+        self.tags = tags
+        self.createdBy = createdBy
+        self.createdAt = Date()
+        self.updatedAt = Date()
+    }
+}
+
+// MARK: - User Reference (for sharing)
+struct UserReference: Codable, Identifiable, Hashable {
+    let id: String           // User ID
+    let name: String         // Display name
+    let profileImageUrl: String?
+    let handle: String?      // @username
+    
+    init(id: String, name: String, profileImageUrl: String? = nil, handle: String? = nil) {
+        self.id = id
+        self.name = name
+        self.profileImageUrl = profileImageUrl
+        self.handle = handle
+    }
+}
+
+// MARK: - Content Statistics
+struct ContentStats: Codable, Hashable {
+    var views: Int = 0
+    var likes: Int = 0
+    var saves: Int = 0
+    var shares: Int = 0
+    var comments: Int = 0
+    
+    init() {}
+}
 
 // MARK: - Ingredient Categories
 enum IngredientCategory: String, CaseIterable, Codable {
@@ -49,7 +183,7 @@ enum IngredientCategory: String, CaseIterable, Codable {
         case .herbsSpices: return "sparkles"
         case .cupboardStaples: return "cabinet.fill"
         case .dairy: return "drop.fill"
-        case .cannedJarred: return "cylinder.fill"
+        case .cannedJarred: return "takeoutbag.and.cup.and.straw.fill"
         case .other: return "questionmark.circle.fill"
         }
     }
@@ -63,11 +197,15 @@ enum IngredientCategory: String, CaseIterable, Codable {
         case .herbsSpices: return .purple
         case .cupboardStaples: return .brown
         case .dairy: return .blue
-        case .cannedJarred: return .gray
-        case .other: return .secondary
+        case .cannedJarred: return .yellow
+        case .other: return .gray
         }
     }
 }
+
+// ========================================================================
+// MARK: - Models
+// ========================================================================
 
 // MARK: - Nutrition Information
 struct Nutrition: Codable, Hashable {
@@ -169,7 +307,7 @@ struct Ingredient: Codable, Identifiable, Hashable {
 }
 
 // MARK: - Recipe Difficulty
-enum RecipeDifficulty: String, CaseIterable, Codable {
+enum RecipeDifficulty: String, CaseIterable, Codable, Hashable {
     case easy = "Easy"
     case medium = "Medium"
     case hard = "Hard"
@@ -195,66 +333,10 @@ enum RecipeDifficulty: String, CaseIterable, Codable {
     }
 }
 
-// MARK: - Recipe Model
-struct Recipe: Identifiable, Codable, Hashable {
-    let id: String
-    var name: String
-    let description: String
-    let imageUrl: String
-    let prepTime: Int?
-    let cookTime: Int?
-    let difficulty: RecipeDifficulty?
-    let nutrition: Nutrition?
-    let ingredients: [Ingredient]
-    let isFromReel: Bool
-    let extractedFrom: String?  // NEW: "instagram", "tiktok", "youtube", or "website"
-    let creatorHandle: String?  // NEW: Creator's username with @ prefix
-    let creatorName: String?    // NEW: Creator's display name
-    let originalUrl: String?    // NEW: Original reel/post URL for opening in browser/app
-    let steps: [String]
-    let createdAt: Date
-    
-    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, prepTime: Int? = nil, cookTime: Int? = nil, difficulty: RecipeDifficulty? = nil, nutrition: Nutrition? = nil, ingredients: [Ingredient], isFromReel: Bool = false, extractedFrom: String? = nil, creatorHandle: String? = nil, creatorName: String? = nil, originalUrl: String? = nil, steps: [String], createdAt: Date = Date()) {
-        self.id = id
-        self.name = name
-        self.description = description
-        self.imageUrl = imageUrl
-        self.prepTime = prepTime
-        self.cookTime = cookTime
-        self.difficulty = difficulty
-        self.nutrition = nutrition
-        self.ingredients = ingredients
-        self.isFromReel = isFromReel
-        self.extractedFrom = extractedFrom
-        self.creatorHandle = creatorHandle
-        self.creatorName = creatorName
-        self.originalUrl = originalUrl
-        self.steps = steps
-        self.createdAt = createdAt
-    }
-    
-    // Backward compatibility initializer for string ingredients (deprecated)
-    init(id: String = UUID().uuidString, name: String, description: String, imageUrl: String, ingredients: [String], cookTime: Int? = nil, isFromReel: Bool = false, steps: [String], createdAt: Date = Date()) {
-        self.id = id
-        self.name = name
-        self.description = description
-        self.imageUrl = imageUrl
-        self.prepTime = nil
-        self.cookTime = cookTime
-        self.difficulty = nil
-        self.nutrition = nil
-        self.ingredients = ingredients.map { Ingredient(name: $0, category: .other) }
-        self.isFromReel = isFromReel
-        self.extractedFrom = nil
-        self.creatorHandle = nil
-        self.creatorName = nil
-        self.originalUrl = nil
-        self.steps = steps
-        self.createdAt = createdAt
-    }
-    
-    // Computed properties for UI convenience
-    var totalTime: Int? {
+// MARK: - Legacy Recipe Extensions (for computed properties)
+extension Recipe {
+    // Computed properties for UI convenience (moved from old Recipe struct)
+    var totalTimeComputed: Int? {
         let prep = prepTime ?? 0
         let cook = cookTime ?? 0
         let total = prep + cook
@@ -302,20 +384,6 @@ struct Recipe: Identifiable, Codable, Hashable {
             return name
         }
         return nil
-    }
-}
-
-struct Collection: Identifiable, Codable, Hashable {
-    let id: String
-    var name: String
-    var recipeIDs: [String]
-    let createdAt: Date
-    
-    init(id: String = UUID().uuidString, name: String, recipeIDs: [String] = [], createdAt: Date = Date()) {
-        self.id = id
-        self.name = name
-        self.recipeIDs = recipeIDs
-        self.createdAt = createdAt
     }
 }
 
@@ -427,12 +495,12 @@ private struct APIRecipe: Decodable {
             difficulty: RecipeDifficulty(rawValue: difficulty ?? "Medium"),
             nutrition: nutrition,
             ingredients: convertedIngredients,
+            steps: (steps ?? []).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty },
             isFromReel: true,
             extractedFrom: extractedFrom,
             creatorHandle: creatorHandle,
             creatorName: creatorName,
-            originalUrl: self.originalUrl,
-            steps: (steps ?? []).filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            originalUrl: self.originalUrl
         )
         
         // Debug: Print what was actually stored in the Recipe object
@@ -1033,11 +1101,6 @@ class RecipeStore: ObservableObject {
                     Ingredient(name: "3 tbsp Sour Cream", category: .dairy),
                     Ingredient(name: "Chilli Powder (optional, for corn)", category: .herbsSpices)
                 ],
-                isFromReel: true,
-                extractedFrom: "instagram",
-                creatorHandle: "@foodinfivemins",
-                creatorName: "Food In 5 | Bill",
-                originalUrl: "https://www.instagram.com/foodinfivemins/reel/DIgNIdxyZpr/?hl=en",
                 steps: [
                     "Cut chicken thigh fillets into bite-sized pieces (5 minutes).",
                     "In a large bowl, combine chicken with 1.5 tsp paprika, 1 tsp onion powder, 1 tsp garlic powder, 1 tsp cumin, juice of 1/2 lime, 2 tbsp chipotle sauce, and 1 tbsp olive oil. Mix well to coat. Marinate for at least 15 minutes.",
@@ -1049,7 +1112,12 @@ class RecipeStore: ObservableObject {
                     "Reduce heat and stir in juice of 1/2 lime, chopped red onion, and a few sprigs of coriander. Cook for 1-2 more minutes. Remove from heat.",
                     "In a large bowl, combine cooked rice, black beans, juice of 1/2 lime, and a few sprigs of chopped coriander. Mix well.",
                     "To serve, divide rice mixture among bowls. Top with chipotle chicken and charred sweetcorn. Add a dollop of sour cream to each bowl."
-                ]
+                ],
+                isFromReel: true,
+                extractedFrom: "instagram",
+                creatorHandle: "@foodinfivemins",
+                creatorName: "Food In 5 | Bill",
+                originalUrl: "https://www.instagram.com/foodinfivemins/reel/DIgNIdxyZpr/?hl=en"
             ),
             
             // Recipe 2: Black Pepper Chicken Meal Prep (Fresh from Instagram)
@@ -1078,11 +1146,6 @@ class RecipeStore: ObservableObject {
                     Ingredient(name: "1 Tbsp Dark Soy Sauce", category: .cupboardStaples),
                     Ingredient(name: "250g Uncooked Rice", category: .pastaRiceGrains)
                 ],
-                isFromReel: true,
-                extractedFrom: "instagram",
-                creatorHandle: "@foodinfivemins",
-                creatorName: "Food In 5 | Bill",
-                originalUrl: "https://www.instagram.com/foodinfivemins/reel/DKRUldhuOzt/?hl=en",
                 steps: [
                     "Dice the chicken thigh fillets into bite-sized pieces.",
                     "Mince the garlic cloves.",
@@ -1099,7 +1162,12 @@ class RecipeStore: ObservableObject {
                     "Add the chopped fresh chili and spring onions, rice vinegar, sesame oil, and dark soy sauce. Stir well.",
                     "Cook for a final 2 minutes, ensuring everything is well coated and heated through.",
                     "Serve the black pepper chicken stir fry alongside the cooked rice. Divide into meal prep containers if desired."
-                ]
+                ],
+                isFromReel: true,
+                extractedFrom: "instagram",
+                creatorHandle: "@foodinfivemins",
+                creatorName: "Food In 5 | Bill",
+                originalUrl: "https://www.instagram.com/foodinfivemins/reel/DKRUldhuOzt/?hl=en"
             ),
             
             // Recipe 3: Sesame Ground Chicken with Honey Sesame Green Beans (Fresh from Instagram)
@@ -1126,11 +1194,6 @@ class RecipeStore: ObservableObject {
                     Ingredient(name: "1 tbsp Black & White Sesame Seeds", category: .herbsSpices),
                     Ingredient(name: "275g Uncooked Long Grain Rice", category: .pastaRiceGrains)
                 ],
-                isFromReel: true,
-                extractedFrom: "instagram",
-                creatorHandle: "@foodinfivemins",
-                creatorName: "Food In 5 | Bill",
-                originalUrl: "https://www.instagram.com/foodinfivemins/reel/DIRHVcDy7Bk/?hl=en",
                 steps: [
                     "Rinse the rice under cold water until the water runs clear. Add the rice to a pot with water (according to package instructions), bring to a boil, then reduce heat and simmer for 18-20 minutes until cooked. Fluff with a fork and set aside.",
                     "While the rice cooks, finely chop 1/2 red onion, mince 2 cloves of garlic, slice 3 small chilis, and finely slice 1 spring onion. Trim and cut the green beans into bite-sized pieces.",
@@ -1142,7 +1205,12 @@ class RecipeStore: ObservableObject {
                     "In the same pan, increase the heat to high. Add the green beans and stir-fry for 5 minutes until just tender.",
                     "Add 1 tbsp honey and 1 tbsp black & white sesame seeds to the green beans. Stir well and cook for another 1-2 minutes until the beans are coated and slightly caramelized.",
                     "To serve, divide the cooked rice among bowls. Top with the sesame ground chicken and honey sesame green beans. Garnish with the remaining spring onion and a drizzle of light soy sauce if desired."
-                ]
+                ],
+                isFromReel: true,
+                extractedFrom: "instagram",
+                creatorHandle: "@foodinfivemins",
+                creatorName: "Food In 5 | Bill",
+                originalUrl: "https://www.instagram.com/foodinfivemins/reel/DIRHVcDy7Bk/?hl=en"
             )
         ]
         print("📱 Created \(self.recipes.count) sample recipes")
@@ -1172,19 +1240,19 @@ struct TabBarView: View {
             Group {
                 switch selectedTab {
                 case 0:
-        NavigationView {
-            HomeView()
-        }
+                    NavigationStack {
+                        HomeView()
+                    }
                 case 1:
                     ImportTabView()
                 case 2:
                     ShoppingListView()
                 case 3:
-                    NavigationView {
+                    NavigationStack {
                         UserInfoView()
                     }
                 default:
-                    NavigationView {
+                    NavigationStack {
                         HomeView()
                     }
                 }
@@ -1944,53 +2012,41 @@ struct RecipeDetailView: View {
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: .topLeading) {
                     Button(action: {
                         openOriginalSource()
                     }) {
-                AsyncImage(url: URL(string: recipe.imageUrl)) { image in
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } placeholder: {
-                    RecipeImagePlaceholder(isFromReel: recipe.isFromReel)
-                }
-                .frame(height: 250)
-                .clipped()
+                        AsyncImage(url: URL(string: recipe.imageUrl)) { image in
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        } placeholder: {
+                            RecipeImagePlaceholder(isFromReel: recipe.isFromReel)
+                        }
+                        .frame(height: 250)
+                        .clipped()
                     }
                     .buttonStyle(.plain)
-                    
-                    // Custom back button with better visibility
-                    Button(action: {
-                        dismiss()
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
-                            .background(Color.black.opacity(0.6))
-                            .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.3), radius: 4, x: 0, y: 2)
-                    }
-                    .padding(.top, 50) // Account for status bar
-                    .padding(.leading, 16)
                 }
                 
-                VStack(alignment: .leading, spacing: 24) {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text(recipe.name).font(.largeTitle).fontWeight(.bold)
+                LazyVStack(alignment: .leading, spacing: 24) {
+                    // Recipe Title and Details
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(recipe.name)
+                            .font(.largeTitle)
+                            .fontWeight(.bold)
+                            .multilineTextAlignment(.leading)
                         
-                        // Recipe Info Grid (2x2 layout)
-                        LazyVGrid(columns: [
-                            GridItem(.flexible(), spacing: 8),
-                            GridItem(.flexible(), spacing: 8)
-                        ], spacing: 12) {
+                        // Recipe Info Cards
+                        HStack(spacing: 12) {
                             // Prep Time
                             if let prepTime = recipe.prepTime {
                                 RecipeInfoCard(
-                                    icon: "timer",
-                                    title: "Prep Time",
+                                    icon: "clock",
+                                    title: "Prep",
                                     value: "\(prepTime) min",
-                                    color: .orange
+                                    color: .blue
                                 )
                             }
                             
@@ -1998,9 +2054,9 @@ struct RecipeDetailView: View {
                             if let cookTime = recipe.cookTime {
                                 RecipeInfoCard(
                                     icon: "flame",
-                                    title: "Cook Time", 
+                                    title: "Cook",
                                     value: "\(cookTime) min",
-                                    color: .red
+                                    color: .orange
                                 )
                             }
                             
@@ -2008,9 +2064,9 @@ struct RecipeDetailView: View {
                             if let difficulty = recipe.difficulty {
                                 RecipeInfoCard(
                                     icon: difficulty.iconName,
-                                    title: "Difficulty",
+                                    title: "Level",
                                     value: difficulty.displayName,
-                                    color: difficulty.color
+                                    color: .green
                                 )
                             }
                             
@@ -2031,7 +2087,7 @@ struct RecipeDetailView: View {
                         }
                         
                         // Creator Information
-                        if recipe.hasCreatorInfo, let creatorName = recipe.creatorHandle {
+                        if recipe.hasCreatorInfo, let creatorName = recipe.displayCreatorName {
                             HStack(spacing: 8) {
                                 Image(systemName: "person.circle.fill")
                                     .font(.system(size: 16))
@@ -2045,31 +2101,38 @@ struct RecipeDetailView: View {
                         }
                     }
                     
-                    if let nutrition = recipe.nutrition {
-                        NutritionView(nutrition: nutrition)
+                    // Lazy load heavy components
+                    Group {
+                        if let nutrition = recipe.nutrition {
+                            NutritionView(nutrition: nutrition)
+                        }
+                        
+                        HealthReport(recipe: recipe)
+                        
+                        IngredientsView(recipe: recipe)
+                        
+                        InstructionsView(recipe: recipe)
                     }
-                    
-                    HealthReport(recipe: recipe)
-                    
-                    IngredientsView(recipe: recipe)
-                    
-                    InstructionsView(recipe: recipe)
-                    
                 }
                 .padding()
             }
         }
-        .navigationBarHidden(true)
-        .ignoresSafeArea(edges: .top)
-        .gesture(
-            DragGesture()
-                .onEnded { value in
-                    // Swipe right to go back
-                    if value.translation.width > 100 && abs(value.translation.height) < 50 {
-                        dismiss()
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: {
+                    dismiss()
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 17, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: 17))
                     }
+                    .foregroundColor(.primary)
                 }
-        )
+            }
+        }
         .onReceive(recipeStore.$shouldDismissToHome) { shouldDismiss in
             if shouldDismiss {
                 dismiss()

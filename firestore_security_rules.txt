@@ -1,0 +1,209 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ========================================================================
+    // HELPER FUNCTIONS
+    // ========================================================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user owns the resource
+    function isOwner(resource) {
+      return isAuthenticated() && request.auth.uid == resource.data.createdBy;
+    }
+    
+    // Check if content is public
+    function isPublic(resource) {
+      return resource.data.visibility == 'public';
+    }
+    
+    // Check if content is visible to friends
+    function isFriendsOnly(resource) {
+      return resource.data.visibility == 'friends';
+    }
+    
+    // Check if user can read content based on visibility
+    function canReadContent(resource) {
+      return isPublic(resource) || 
+             isOwner(resource) || 
+             (isFriendsOnly(resource) && isFriend(resource.data.createdBy));
+    }
+    
+    // Check if users are friends (simplified - you can enhance this)
+    function isFriend(userId) {
+      return isAuthenticated(); // For now, all authenticated users are "friends"
+      // Later you can implement: request.auth.uid in get(/databases/$(database)/documents/users/$(userId)).data.socialData.following
+    }
+
+    // ========================================================================
+    // USER DATA (Private)
+    // ========================================================================
+    
+    match /users/{userId} {
+      // Users can only access their own user document
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Allow reading user profile info for sharing/social features
+      allow get: if isAuthenticated() && resource.data.keys().hasAny(['profile', 'socialData']);
+    }
+
+    // ========================================================================
+    // RECIPES (Shareable Content)
+    // ========================================================================
+    
+    match /recipes/{recipeId} {
+      // Anyone can read public recipes
+      // Friends can read friends-only recipes  
+      // Owners can read their private recipes
+      allow read: if canReadContent(resource);
+      
+      // Only owners can create/update their recipes
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.createdBy;
+      allow update: if isOwner(resource);
+      
+      // Only owners can delete their recipes
+      allow delete: if isOwner(resource);
+    }
+
+    // ========================================================================
+    // COLLECTIONS (Shareable Content)
+    // ========================================================================
+    
+    match /collections/{collectionId} {
+      // Same rules as recipes for reading
+      allow read: if canReadContent(resource);
+      
+      // Only owners can create collections
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.createdBy;
+      
+      // Owners and collaborators can update collections
+      allow update: if isOwner(resource) || 
+                       (isAuthenticated() && 
+                        request.auth.uid in resource.data.collaborators);
+      
+      // Only owners can delete collections
+      allow delete: if isOwner(resource);
+    }
+
+    // ========================================================================
+    // SHARES (Social Features)
+    // ========================================================================
+    
+    match /shares/{shareId} {
+      // Users can read shares sent to them or sent by them
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == resource.data.toUserId || 
+                      request.auth.uid == resource.data.fromUserId);
+      
+      // Users can create shares (send to others)
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.fromUserId;
+      
+      // Recipients can update share status (accept/decline)
+      allow update: if isAuthenticated() && 
+                       request.auth.uid == resource.data.toUserId &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']);
+      
+      // Users can delete shares they sent or received
+      allow delete: if isAuthenticated() && 
+                       (request.auth.uid == resource.data.toUserId || 
+                        request.auth.uid == resource.data.fromUserId);
+    }
+
+    // ========================================================================
+    // LIKES (Social Engagement)
+    // ========================================================================
+    
+    match /likes/{likeId} {
+      // Users can read their own likes
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      
+      // Users can create likes
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
+      
+      // Users can delete their own likes
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    // ========================================================================
+    // COMMENTS (Future Feature)
+    // ========================================================================
+    
+    match /comments/{commentId} {
+      // Anyone can read comments on public content
+      // Implement based on content visibility
+      allow read: if isAuthenticated();
+      
+      // Users can create comments
+      allow create: if isAuthenticated() && request.auth.uid == request.resource.data.userId;
+      
+      // Users can update/delete their own comments
+      allow update, delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    // ========================================================================
+    // PUBLIC DISCOVERY (Read-Only)
+    // ========================================================================
+    
+    match /public/{document=**} {
+      // Anyone can read public discovery content
+      allow read: if isAuthenticated();
+      
+      // Only admins can write (you can implement admin checks)
+      allow write: if false; // Or implement admin check
+    }
+
+    // ========================================================================
+    // TRENDING/FEATURED (Read-Only)
+    // ========================================================================
+    
+    match /trending/{document=**} {
+      // Anyone can read trending content
+      allow read: if isAuthenticated();
+      
+      // Only system/admins can update trending data
+      allow write: if false; // Or implement admin/system check
+    }
+
+    // ========================================================================
+    // ANALYTICS (System Only)
+    // ========================================================================
+    
+    match /analytics/{document=**} {
+      // No direct user access - system only
+      allow read, write: if false;
+    }
+
+    // ========================================================================
+    // NOTIFICATIONS (Future Feature)
+    // ========================================================================
+    
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isAuthenticated() && request.auth.uid == resource.data.userId;
+      
+      // System can create notifications
+      allow create: if true; // System creates notifications
+      
+      // Users can mark notifications as read
+      allow update: if isAuthenticated() && 
+                       request.auth.uid == resource.data.userId &&
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read', 'readAt']);
+      
+      // Users can delete their notifications
+      allow delete: if isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    // ========================================================================
+    // DENY ALL OTHER PATHS
+    // ========================================================================
+    
+    // Explicitly deny access to any other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+} 

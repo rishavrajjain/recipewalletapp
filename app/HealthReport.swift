@@ -799,9 +799,8 @@ struct _HealthReportPreview: View {
                         Ingredient(name: "butter", category: .dairy),
                         Ingredient(name: "cream", category: .dairy)
                     ],
-                    isFromReel: false,
                     steps: ["Cook pasta", "Add cheese"],
-                    createdAt: Date()
+                    isFromReel: false
                 ))
                 Spacer()
             }
