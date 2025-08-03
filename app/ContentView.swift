@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import FirebaseAuth
 
 // MARK: - Brand Colors
 extension Color {
@@ -532,7 +533,10 @@ enum APIError: LocalizedError {
 @MainActor
 class RecipeStore: ObservableObject {
     @Published var recipes: [Recipe] = [] {
-        didSet { saveRecipes() }
+        didSet { 
+            saveRecipes()
+            filterRecipes() // Ensure UI always reflects recipe changes
+        }
     }
     @Published var collections: [Collection] = [] {
         didSet { saveCollections() }
@@ -555,6 +559,8 @@ class RecipeStore: ObservableObject {
     private let apiService = RecipeAPIService()
     private var importTask: Task<Recipe, Error>?
     private var pendingCustomName: String = ""
+    private var authListener: AuthStateDidChangeListenerHandle?
+    private var hasLoadedFromFirestore = false
     
     private let recipesKey = "userRecipes"
     private let collectionsKey = "userCollections"
@@ -562,21 +568,66 @@ class RecipeStore: ObservableObject {
     private let firstTimeUserKey = "isFirstTimeUser"
     
     init() {
+        print("🚀 RecipeStore.init() started")
+        
         loadData()
+        print("📊 After loadData(): \(recipes.count) recipes, \(collections.count) collections")
         
         // Check if this is the first time user
         self.isFirstTimeUser = !UserDefaults.standard.bool(forKey: firstTimeUserKey)
+        print("👤 First time user: \(isFirstTimeUser)")
         
         // Clean up old data structure
         cleanupOldCollections()
+        print("🧹 After cleanupOldCollections(): \(recipes.count) recipes, \(collections.count) collections")
         
-        if recipes.isEmpty {
+        // Set up authentication listener to reload data when user signs in
+        authListener = Auth.auth().addStateDidChangeListener { [weak self] _, user in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                
+                if let user = user {
+                    // User signed in - load their data from Firestore
+                    print("🔐 User authenticated: \(user.uid) - Loading Firestore data...")
+                    print("📊 Before Firestore load: \(self.recipes.count) recipes, \(self.collections.count) collections")
+                    await self.loadFromFirestore()
+                    print("📊 After Firestore load: \(self.recipes.count) recipes, \(self.collections.count) collections")
+                } else {
+                    // User signed out - clear data and reset
+                    print("👋 User signed out - Clearing user data...")
+                    self.hasLoadedFromFirestore = false
+                    self.clearUserData()
+                    self.loadSampleData()
+                    print("📊 After sign out reset: \(self.recipes.count) recipes, \(self.collections.count) collections")
+                }
+            }
+        }
+        
+        // Check current auth state immediately
+        if let currentUser = Auth.auth().currentUser {
+            print("🔐 Already authenticated during init: \(currentUser.uid)")
+        } else {
+            print("❌ No authenticated user during init")
+        }
+        
+        // Only load sample data if we have no data at all
+        if recipes.isEmpty && !hasLoadedFromFirestore {
+            print("📝 Loading sample data (no existing data)")
             loadSampleData()
         } else {
+            print("✅ Skipping sample data (have existing data or loaded from Firestore)")
             // If we have existing recipes but no Meal Preps collection, create it
             ensureMealPrepsCollectionExists()
         }
-        filterRecipes()
+        
+        print("📊 Final init state: \(recipes.count) recipes, \(collections.count) collections")
+        print("🏁 RecipeStore.init() completed")
+    }
+    
+    deinit {
+        if let handle = authListener {
+            Auth.auth().removeStateDidChangeListener(handle)
+        }
     }
     
     private func cleanupOldCollections() {
@@ -717,19 +768,28 @@ class RecipeStore: ObservableObject {
     }
     
     private func completeImport(with recipe: Recipe) {
+        print("📥 completeImport() started with recipe: '\(recipe.name)' (ID: \(recipe.id))")
+        print("📊 Before import: \(recipes.count) recipes")
+        
         var finalRecipe = recipe
         let trimmedName = pendingCustomName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmedName.isEmpty {
+            print("📝 Using custom name: '\(trimmedName)' instead of '\(recipe.name)'")
             finalRecipe.name = trimmedName
         }
         
         recipes.insert(finalRecipe, at: 0)
+        print("📊 After import: \(recipes.count) recipes")
+        print("📥 Inserted recipe '\(finalRecipe.name)' at position 0")
+        
         filterRecipes()
         
         isProcessingReel = false
         pendingCustomName = ""
         loadingRecipeName = ""
         importTask = nil
+        
+        print("📥 completeImport() completed")
     }
     
     private func handleImportError(_ error: Error) {
@@ -763,48 +823,158 @@ class RecipeStore: ObservableObject {
     }
     
     private func loadData() {
+        print("📂 loadData() started")
         let decoder = JSONDecoder()
         
         // Try to load recipes with new format first
         if let recipesData = UserDefaults.standard.data(forKey: recipesKey) {
+            print("📁 Found recipes data in UserDefaults (\(recipesData.count) bytes)")
             do {
                 let decodedRecipes = try decoder.decode([Recipe].self, from: recipesData)
-            self.recipes = decodedRecipes
+                self.recipes = decodedRecipes
+                print("✅ Loaded \(decodedRecipes.count) recipes from UserDefaults")
+                // Print first recipe name for debugging
+                if let firstRecipe = decodedRecipes.first {
+                    print("📝 First recipe: '\(firstRecipe.name)' (ID: \(firstRecipe.id))")
+                }
             } catch {
+                print("❌ Failed to decode recipes from UserDefaults: \(error)")
                 // Clear old incompatible data and start fresh
                 UserDefaults.standard.removeObject(forKey: recipesKey)
                 self.recipes = []
             }
+        } else {
+            print("📭 No recipes data found in UserDefaults")
         }
         
         // Load collections (should be compatible)
         if let collectionsData = UserDefaults.standard.data(forKey: collectionsKey) {
+            print("📁 Found collections data in UserDefaults (\(collectionsData.count) bytes)")
             do {
                 let decodedCollections = try decoder.decode([Collection].self, from: collectionsData)
-            self.collections = decodedCollections
+                self.collections = decodedCollections
+                print("✅ Loaded \(decodedCollections.count) collections from UserDefaults")
+                for collection in decodedCollections {
+                    print("📂 Collection: '\(collection.name)' with \(collection.recipeIDs.count) recipes")
+                }
             } catch {
+                print("❌ Failed to decode collections from UserDefaults: \(error)")
                 UserDefaults.standard.removeObject(forKey: collectionsKey)
                 self.collections = []
             }
+        } else {
+            print("📭 No collections data found in UserDefaults")
         }
         
         // Load shopping list
         if let shoppingListData = UserDefaults.standard.data(forKey: shoppingListKey) {
+            print("📁 Found shopping list data in UserDefaults (\(shoppingListData.count) bytes)")
             do {
                 let decodedShoppingList = try decoder.decode([ShoppingListItem].self, from: shoppingListData)
                 self.shoppingList = decodedShoppingList
+                print("✅ Loaded \(decodedShoppingList.count) shopping list items from UserDefaults")
             } catch {
+                print("❌ Failed to decode shopping list from UserDefaults: \(error)")
                 UserDefaults.standard.removeObject(forKey: shoppingListKey)
                 self.shoppingList = []
             }
+        } else {
+            print("📭 No shopping list data found in UserDefaults")
         }
 
-        // Load any data stored in Firestore for the current user
-        RecipeCloudStore.shared.load { recipes, collections, list in
-            if !recipes.isEmpty { self.recipes = recipes }
-            if !collections.isEmpty { self.collections = collections }
-            if !list.isEmpty { self.shoppingList = list }
+        print("📂 loadData() completed - Recipes: \(recipes.count), Collections: \(collections.count), Shopping: \(shoppingList.count)")
+        
+        // Ensure UI is updated with any data we loaded from UserDefaults
+        filterRecipes()
+        print("🔄 Applied initial filtering - filteredRecipes count: \(filteredRecipes.count)")
+        
+        // Note: Firestore loading now happens in authentication listener
+        // This ensures we only load when user is properly authenticated
+    }
+    
+    @MainActor
+    private func loadFromFirestore() async {
+        print("🔥 loadFromFirestore() started")
+        return await withCheckedContinuation { continuation in
+            RecipeCloudStore.shared.load { [weak self] recipes, collections, list in
+                guard let self = self else { 
+                    print("❌ Self is nil in Firestore callback")
+                    continuation.resume()
+                    return 
+                }
+                
+                print("📥 Loaded from Firestore: \(recipes.count) recipes, \(collections.count) collections, \(list.count) shopping items")
+                
+                // Print details about what was loaded
+                if !recipes.isEmpty {
+                    print("🔥 Firestore recipes details:")
+                    for (index, recipe) in recipes.enumerated() {
+                        print("   \(index + 1). '\(recipe.name)' (ID: \(recipe.id))")
+                    }
+                }
+                
+                if !collections.isEmpty {
+                    print("🔥 Firestore collections details:")
+                    for collection in collections {
+                        print("   📂 '\(collection.name)' with \(collection.recipeIDs.count) recipe IDs")
+                    }
+                }
+                
+                // Only update if we got actual data from Firestore
+                if !recipes.isEmpty || !collections.isEmpty || !list.isEmpty {
+                    self.hasLoadedFromFirestore = true
+                    print("🔥 Setting hasLoadedFromFirestore = true")
+                    
+                    // Update with Firestore data
+                    if !recipes.isEmpty { 
+                        print("🔄 Replacing \(self.recipes.count) local recipes with \(recipes.count) Firestore recipes")
+                        self.recipes = recipes 
+                        print("✅ Updated recipes from Firestore")
+                    }
+                    if !collections.isEmpty { 
+                        print("🔄 Replacing \(self.collections.count) local collections with \(collections.count) Firestore collections")
+                        self.collections = collections 
+                        print("✅ Updated collections from Firestore")
+                    }
+                    if !list.isEmpty { 
+                        print("🔄 Replacing \(self.shoppingList.count) local shopping items with \(list.count) Firestore items")
+                        self.shoppingList = list 
+                        print("✅ Updated shopping list from Firestore")
+                    }
+                    
+                    // Ensure collections are properly set up
+                    print("🔧 Ensuring Meal Preps collection exists...")
+                    self.ensureMealPrepsCollectionExists()
+                    print("📊 After ensureMealPrepsCollectionExists: \(self.recipes.count) recipes, \(self.collections.count) collections")
+                    
+                    // 🔥 CRITICAL FIX: Refresh filtered recipes for UI display
+                    print("🔄 Refreshing filtered recipes for UI display...")
+                    self.filterRecipes()
+                    print("✅ UI refresh completed - filteredRecipes count: \(self.filteredRecipes.count)")
+                } else {
+                    print("📭 No data found in Firestore - keeping local data")
+                    print("📊 Keeping local data: \(self.recipes.count) recipes, \(self.collections.count) collections")
+                }
+                
+                print("🔥 loadFromFirestore() completed")
+                continuation.resume()
+            }
         }
+    }
+    
+    private func clearUserData() {
+        print("🧹 clearUserData() started - Before: \(recipes.count) recipes, \(collections.count) collections, \(shoppingList.count) shopping items")
+        
+        recipes = []
+        collections = []
+        shoppingList = []
+        
+        // Also clear UserDefaults cache
+        UserDefaults.standard.removeObject(forKey: recipesKey)
+        UserDefaults.standard.removeObject(forKey: collectionsKey)
+        UserDefaults.standard.removeObject(forKey: shoppingListKey)
+        
+        print("🧹 clearUserData() completed - After: \(recipes.count) recipes, \(collections.count) collections, \(shoppingList.count) shopping items")
     }
     
     private func saveRecipes() {
@@ -813,6 +983,7 @@ class RecipeStore: ObservableObject {
             UserDefaults.standard.set(encoded, forKey: recipesKey)
         }
         RecipeCloudStore.shared.save(recipes: recipes, collections: collections, shoppingList: shoppingList)
+        print("💾 Saved \(recipes.count) recipes to Firestore and UserDefaults")
     }
     
     private func saveCollections() {
@@ -832,6 +1003,7 @@ class RecipeStore: ObservableObject {
     }
     
     private func loadSampleData() {
+        print("📱 loadSampleData() started - Loading 3 sample recipes")
         self.recipes = [
             // Recipe 1: High Protein Chipotle Chicken Bowls (Fresh from Instagram)
             Recipe(
@@ -973,12 +1145,16 @@ class RecipeStore: ObservableObject {
                 ]
             )
         ]
+        print("📱 Created \(self.recipes.count) sample recipes")
+        
         // Create Meal Preps collection with all recipes
         let mealPrepsCollection = Collection(
             name: "Meal Preps",
             recipeIDs: self.recipes.map { $0.id }
         )
         self.collections = [mealPrepsCollection]
+        print("📱 Created Meal Preps collection with \(mealPrepsCollection.recipeIDs.count) recipe IDs")
+        print("📱 loadSampleData() completed - Final state: \(recipes.count) recipes, \(collections.count) collections")
     }
 }
 
@@ -1540,6 +1716,7 @@ struct HomeView: View {
     @State private var showingCreateCollectionSheet = false
     @State private var recipeToManage: Recipe?
     @State private var isCollectionsExpanded = true
+    @State private var personalizedGreeting = "Recipe Wallet"
     
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
     
@@ -1624,8 +1801,11 @@ struct HomeView: View {
                     Spacer(minLength: 100)
                 }
             }
-            .navigationTitle("Recipe Wallet")
+            .navigationTitle(personalizedGreeting)
             .background(Color(.systemGroupedBackground))
+            .onAppear {
+                updatePersonalizedGreeting()
+            }
             .sheet(isPresented: $showingCreateCollectionSheet) { NewCollectionSheet() }
             .sheet(item: $recipeToManage) { recipe in
                 AddToCollectionSheet(recipe: recipe)
@@ -1647,6 +1827,10 @@ struct HomeView: View {
     
     private func deleteRecipe(_ recipe: Recipe) {
         recipeStore.deleteRecipe(recipe)
+    }
+    
+    private func updatePersonalizedGreeting() {
+        personalizedGreeting = RecipeCloudStore.shared.getPersonalizedGreeting()
     }
 }
 

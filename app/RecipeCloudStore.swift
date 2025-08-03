@@ -14,6 +14,7 @@ class RecipeCloudStore {
     private var cachedRecipes: [Recipe] = []
     private var cachedCollections: [Collection] = []
     private var cachedList: [ShoppingListItem] = []
+    private var cachedProfile: UserProfile?
 
     private init() {
         authListener = Auth.auth().addStateDidChangeListener { [weak self] _, user in
@@ -24,6 +25,7 @@ class RecipeCloudStore {
                 self.cachedRecipes = []
                 self.cachedCollections = []
                 self.cachedList = []
+                self.cachedProfile = nil
             }
         }
     }
@@ -63,6 +65,13 @@ class RecipeCloudStore {
                    let decoded = try? decoder.decode([ShoppingListItem].self, from: jsonData) {
                     loadedList = decoded
                 }
+                
+                // Also load and cache user profile
+                if let profileData = data["profile"],
+                   let jsonData = try? JSONSerialization.data(withJSONObject: profileData) {
+                    decoder.dateDecodingStrategy = .iso8601
+                    self?.cachedProfile = try? decoder.decode(UserProfile.self, from: jsonData)
+                }
             }
 
             DispatchQueue.main.async {
@@ -99,5 +108,45 @@ class RecipeCloudStore {
         cachedRecipes = recipes
         cachedCollections = collections
         cachedList = shoppingList
+    }
+    
+    /// Gets cached user profile (useful for quick access without additional Firestore calls)
+    func getCachedProfile() -> UserProfile? {
+        return cachedProfile
+    }
+    
+    /// Updates the cached profile when it's modified elsewhere
+    func updateCachedProfile(_ profile: UserProfile) {
+        cachedProfile = profile
+    }
+    
+    /// Gets user summary for analytics or personalization
+    func getUserSummary() -> (recipesCount: Int, collectionsCount: Int, shoppingItemsCount: Int, hasProfile: Bool) {
+        return (
+            recipesCount: cachedRecipes.count,
+            collectionsCount: cachedCollections.count,
+            shoppingItemsCount: cachedList.count,
+            hasProfile: cachedProfile != nil
+        )
+    }
+}
+
+// MARK: - User Profile Extensions
+extension RecipeCloudStore {
+    
+    /// Gets user's dietary preferences for recipe recommendations
+    func getUserDietaryPreference() -> String? {
+        return cachedProfile?.foodPreference
+    }
+    
+    /// Checks if user has completed their profile setup
+    func isProfileComplete() -> Bool {
+        guard let profile = cachedProfile else { return false }
+        return !profile.name.isEmpty && !profile.age.isEmpty && !profile.weight.isEmpty
+    }
+    
+    /// Gets app title for navigation
+    func getPersonalizedGreeting() -> String {
+        return "Recipe Wallet"
     }
 }

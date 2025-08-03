@@ -73,9 +73,9 @@ class AuthViewModel: NSObject, ObservableObject {
                 let idTokenString = String(data: appleIDToken, encoding: .utf8)
             else { return }
 
-            let credential = OAuthProvider.credential(withProviderID: "apple.com",
-                                                      idToken: idTokenString,
-                                                      rawNonce: nonce)
+            let credential = OAuthProvider.appleCredential(withIDToken: idTokenString,
+                                                           rawNonce: nonce,
+                                                           fullName: appleIDCredential.fullName)
             Auth.auth().signIn(with: credential) { _, error in
                 if let error = error {
                     print("Apple sign in failed: \(error.localizedDescription)")
