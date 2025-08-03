@@ -3,6 +3,7 @@ import SwiftUI
 // MARK: - User Info View
 struct UserInfoView: View {
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject var authViewModel: AuthViewModel
     
     // User profile fields
     @State private var userName: String = ""
@@ -169,6 +170,18 @@ struct UserInfoView: View {
                                     .foregroundColor(.green)
                             }
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
+
+                        Button(action: {
+                            authViewModel.signOut()
+                        }) {
+                            Text("Sign Out")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.red)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(16)
                         }
                     }
                     .padding(.horizontal, 24)

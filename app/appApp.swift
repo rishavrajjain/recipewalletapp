@@ -6,12 +6,25 @@
 //
 
 import SwiftUI
+import Firebase
 
 @main
 struct appApp: App {
+    @StateObject private var authViewModel = AuthViewModel()
+
+    init() {
+        FirebaseApp.configure()
+    }
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            if authViewModel.user != nil {
+                ContentView()
+                    .environmentObject(authViewModel)
+            } else {
+                AuthView()
+                    .environmentObject(authViewModel)
+            }
         }
     }
 }

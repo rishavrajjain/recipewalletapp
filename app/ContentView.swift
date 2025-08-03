@@ -798,6 +798,13 @@ class RecipeStore: ObservableObject {
                 self.shoppingList = []
             }
         }
+
+        // Load any data stored in Firestore for the current user
+        RecipeCloudStore.shared.load { recipes, collections, list in
+            if !recipes.isEmpty { self.recipes = recipes }
+            if !collections.isEmpty { self.collections = collections }
+            if !list.isEmpty { self.shoppingList = list }
+        }
     }
     
     private func saveRecipes() {
@@ -805,6 +812,7 @@ class RecipeStore: ObservableObject {
         if let encoded = try? encoder.encode(recipes) {
             UserDefaults.standard.set(encoded, forKey: recipesKey)
         }
+        RecipeCloudStore.shared.save(recipes: recipes, collections: collections, shoppingList: shoppingList)
     }
     
     private func saveCollections() {
@@ -812,6 +820,7 @@ class RecipeStore: ObservableObject {
         if let encoded = try? encoder.encode(collections) {
             UserDefaults.standard.set(encoded, forKey: collectionsKey)
         }
+        RecipeCloudStore.shared.save(recipes: recipes, collections: collections, shoppingList: shoppingList)
     }
     
     private func saveShoppingList() {
@@ -819,6 +828,7 @@ class RecipeStore: ObservableObject {
         if let encoded = try? encoder.encode(shoppingList) {
             UserDefaults.standard.set(encoded, forKey: shoppingListKey)
         }
+        RecipeCloudStore.shared.save(recipes: recipes, collections: collections, shoppingList: shoppingList)
     }
     
     private func loadSampleData() {
@@ -1503,6 +1513,7 @@ struct CustomNameModal: View {
 
 
 struct ContentView: View {
+    @EnvironmentObject var authViewModel: AuthViewModel
     @StateObject private var recipeStore = RecipeStore()
     
     // Force light mode flag - set to true to always use light mode
@@ -1511,6 +1522,7 @@ struct ContentView: View {
         var body: some View {
         TabBarView()
             .environmentObject(recipeStore)
+            .environmentObject(authViewModel)
             .preferredColorScheme(forceAlwaysLightMode ? .light : nil)
             .onAppear {
                 // Wake up the server on app launch
