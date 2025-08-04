@@ -615,6 +615,7 @@ class RecipeStore: ObservableObject {
     
     @Published var filteredRecipes: [Recipe] = []
     @Published var newlyImportedCollections: Set<String> = [] // Track newly imported collections for glowing effect
+    @Published var selectedShoppingItems: Set<UUID> = [] // Persist shopping list selections across tabs
     @Published var searchText = "" {
         didSet { filterRecipes() }
     }
@@ -729,6 +730,27 @@ class RecipeStore: ObservableObject {
         // Prevent the protected "Meal Preps" collection from being deleted
         guard collection.name != "Meal Preps" else { return }
         collections.removeAll { $0.id == collection.id }
+    }
+    
+    func renameCollection(_ collection: Collection, to newName: String) -> Bool {
+        let trimmedName = newName.trimmingCharacters(in: .whitespaces)
+        
+        // Prevent renaming "Meal Preps" collection
+        guard collection.name != "Meal Preps" else { return false }
+        
+        // Check if another collection with this name already exists
+        if collections.contains(where: { $0.id != collection.id && $0.name.lowercased() == trimmedName.lowercased() }) {
+            return false // Failed to rename - duplicate name
+        }
+        
+        // Find and update the collection
+        if let index = collections.firstIndex(where: { $0.id == collection.id }) {
+            collections[index].name = trimmedName
+            collections[index].updatedAt = Date()
+            return true // Success
+        }
+        
+        return false // Collection not found
     }
     
     private func ensureMealPrepsCollectionExists() {
@@ -1359,14 +1381,12 @@ class RecipeStore: ObservableObject {
         ]
         print("📱 Created \(self.recipes.count) sample recipes")
         
-        // Create Meal Preps collection with all recipes
-        let mealPrepsCollection = Collection(
-            name: "Meal Preps",
-            recipeIDs: self.recipes.map { $0.id }
-        )
-        self.collections = [mealPrepsCollection]
-        print("📱 Created Meal Preps collection with \(mealPrepsCollection.recipeIDs.count) recipe IDs")
+        // Don't create Meal Preps collection here - let ensureMealPrepsCollectionExists() handle it
+        self.collections = []
         print("📱 loadSampleData() completed - Final state: \(recipes.count) recipes, \(collections.count) collections")
+        
+        // Ensure Meal Preps collection exists after loading sample data
+        ensureMealPrepsCollectionExists()
     }
 }
 
@@ -1633,7 +1653,7 @@ struct ImportTabView: View {
                         }
                         
                         // Import Action
-                        Button(action: { showingNameModal = true }) {
+                        Button(action: handleImportAction) {
                             HStack(spacing: 12) {
                                 Image(systemName: "bolt.fill")
                                     .font(.system(size: 16, weight: .medium))
@@ -1715,8 +1735,24 @@ struct ImportTabView: View {
             trimmed.hasPrefix("https://") ||
             trimmed.contains(".com") ||
             trimmed.contains(".org") ||
-            trimmed.contains(".net")
+            trimmed.contains(".net") ||
+            trimmed.contains("recipewallet.ai/")
         )
+    }
+    
+    private func isCollectionLink(_ url: String) -> Bool {
+        let trimmed = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.contains("recipewallet.ai/") && !trimmed.contains("/recipe/")
+    }
+    
+    private func handleImportAction() {
+        // Skip name modal for collection links - import directly
+        if isCollectionLink(reelLink) {
+            recipeStore.startImport(url: reelLink, customName: "")
+        } else {
+            // Regular recipe import - show name modal
+            showingNameModal = true
+        }
     }
     
 
@@ -2050,6 +2086,7 @@ struct CollectionDetailView: View {
     let collection: Collection
     @EnvironmentObject var store: RecipeStore
     @State private var showingAddRecipesSheet = false
+    @State private var showingShareSheet = false
     
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
     
@@ -2066,15 +2103,26 @@ struct CollectionDetailView: View {
         .navigationTitle(collection.name)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingAddRecipesSheet = true
-                } label: {
-                    Label("Add Recipes", systemImage: "folder.badge.plus")
+                HStack(spacing: 16) {
+                    Button {
+                        showingShareSheet = true
+                    } label: {
+                        Label("Share Collection", systemImage: "square.and.arrow.up")
+                    }
+                    
+                    Button {
+                        showingAddRecipesSheet = true
+                    } label: {
+                        Label("Add Recipes", systemImage: "folder.badge.plus")
+                    }
                 }
             }
         }
         .sheet(isPresented: $showingAddRecipesSheet) {
             AddRecipesToCollectionSheet(collection: collection)
+        }
+        .sheet(isPresented: $showingShareSheet) {
+            ShareCollectionSheet(collection: collection)
         }
     }
     
@@ -2262,21 +2310,6 @@ struct RecipeDetailView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: {
-                    dismiss()
-                }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 17, weight: .semibold))
-                        Text("Back")
-                            .font(.system(size: 17))
-                    }
-                    .foregroundColor(.primary)
-                }
-            }
-        }
         .onReceive(recipeStore.$shouldDismissToHome) { shouldDismiss in
             if shouldDismiss {
                 dismiss()
@@ -2649,6 +2682,72 @@ struct ShareCollectionSheet: View {
     }
 }
 
+struct RenameCollectionSheet: View {
+    let collection: Collection
+    @EnvironmentObject var store: RecipeStore
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var name: String = ""
+    @State private var showingDuplicateError = false
+    @FocusState private var isFocused: Bool
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section(header: Text("Collection Name")) {
+                    TextField("Enter new name...", text: $name)
+                        .focused($isFocused)
+                }
+                
+                if showingDuplicateError {
+                    Section {
+                        HStack {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                            Text("A collection with this name already exists. Please choose a different name.")
+                                .foregroundColor(.red)
+                                .font(.caption)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Rename Collection")
+            .navigationBarTitleDisplayMode(.inline)
+            .onAppear {
+                name = collection.name
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                    isFocused = true
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Save") {
+                        let success = store.renameCollection(collection, to: name)
+                        if success {
+                            dismiss()
+                        } else {
+                            showingDuplicateError = true
+                            // Give haptic feedback
+                            let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                            impactFeedback.impactOccurred()
+                        }
+                    }
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty || name.trimmingCharacters(in: .whitespaces) == collection.name)
+                }
+            }
+            .onChange(of: name) { _ in
+                // Hide error when user starts typing again
+                if showingDuplicateError {
+                    showingDuplicateError = false
+                }
+            }
+        }
+    }
+}
+
 struct ActivityViewController: UIViewControllerRepresentable {
     let activityItems: [Any]
     
@@ -2922,6 +3021,7 @@ struct CollectionCard: View {
     @EnvironmentObject var store: RecipeStore
     @State private var showingDeleteAlert = false
     @State private var showingShareSheet = false
+    @State private var showingRenameSheet = false
     @State private var glowOpacity: Double = 0.0
     
     private var recipeCount: Int {
@@ -2975,6 +3075,12 @@ struct CollectionCard: View {
                     HStack {
                         Spacer()
                         Menu {
+                            Button {
+                                showingRenameSheet = true
+                            } label: {
+                                Label("Rename Collection", systemImage: "pencil")
+                            }
+                            
                             Button(role: .destructive) {
                                 showingDeleteAlert = true
                             } label: {
@@ -3036,6 +3142,9 @@ struct CollectionCard: View {
         }
         .sheet(isPresented: $showingShareSheet) {
             ShareCollectionSheet(collection: collection)
+        }
+        .sheet(isPresented: $showingRenameSheet) {
+            RenameCollectionSheet(collection: collection)
         }
     }
 }

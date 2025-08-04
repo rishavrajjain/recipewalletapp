@@ -25,11 +25,11 @@ struct appApp: App {
                     // Show loading screen during initial auth check
                     LoadingView()
                 } else if authViewModel.user != nil {
-                    ContentView()
-                        .environmentObject(authViewModel)
-                } else {
-                    AuthView()
-                        .environmentObject(authViewModel)
+                ContentView()
+                    .environmentObject(authViewModel)
+            } else {
+                AuthView()
+                    .environmentObject(authViewModel)
                 }
             }
             .onReceive(authViewModel.$user) { user in

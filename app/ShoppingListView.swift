@@ -3,7 +3,6 @@ import UniformTypeIdentifiers
 
 struct ShoppingListView: View {
     @EnvironmentObject var recipeStore: RecipeStore
-    @State private var selectedItems = Set<UUID>()
     @State private var isSelectionMode = false
     @State private var newItemText = ""
     @State private var showingAddField = false
@@ -181,10 +180,10 @@ struct ShoppingListView: View {
                                     Button(action: {
                                         toggleSelection(for: item)
                                     }) {
-                                        Image(systemName: selectedItems.contains(item.id) ? "checkmark.circle.fill" : "circle")
+                                        Image(systemName: recipeStore.selectedShoppingItems.contains(item.id) ? "checkmark.circle.fill" : "circle")
                                             .font(.system(size: 20, weight: .medium))
-                                            .foregroundColor(selectedItems.contains(item.id) ? Color(red: 0.15, green: 0.4, blue: 0.2) : Color(red: 0.15, green: 0.4, blue: 0.2))
-                                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: selectedItems.contains(item.id))
+                                            .foregroundColor(recipeStore.selectedShoppingItems.contains(item.id) ? Color(red: 0.15, green: 0.4, blue: 0.2) : Color(red: 0.15, green: 0.4, blue: 0.2))
+                                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: recipeStore.selectedShoppingItems.contains(item.id))
                                     }
                                     .buttonStyle(.plain)
                                     
@@ -206,6 +205,13 @@ struct ShoppingListView: View {
                                 .padding(.horizontal, 20)
                                 .padding(.vertical, 14)
                                 .background(Color(.systemBackground))
+                                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                    Button(role: .destructive) {
+                                        deleteShoppingItem(item)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                                 
                                     if item.id != categoryGroup.value.last?.id {
                                         Divider()
@@ -241,7 +247,7 @@ struct ShoppingListView: View {
                             
                             Divider()
                             
-                            if !selectedItems.isEmpty {
+                            if !recipeStore.selectedShoppingItems.isEmpty {
                                 Button(action: copySelectedItems) {
                                     Label("Copy Selected", systemImage: "doc.on.clipboard")
                                 }
@@ -278,11 +284,11 @@ struct ShoppingListView: View {
                     }
                 }
                 
-                if !selectedItems.isEmpty {
+                if !recipeStore.selectedShoppingItems.isEmpty {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("Deselect All") {
                             withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                selectedItems.removeAll()
+                                recipeStore.selectedShoppingItems.removeAll()
                             }
                         }
                         .font(.system(size: 16))
@@ -324,10 +330,10 @@ struct ShoppingListView: View {
     
     private func toggleSelection(for item: ShoppingListItem) {
         withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-            if selectedItems.contains(item.id) {
-                selectedItems.remove(item.id)
+            if recipeStore.selectedShoppingItems.contains(item.id) {
+                recipeStore.selectedShoppingItems.remove(item.id)
             } else {
-                selectedItems.insert(item.id)
+                recipeStore.selectedShoppingItems.insert(item.id)
             }
         }
         
@@ -336,9 +342,20 @@ struct ShoppingListView: View {
         impactFeedback.impactOccurred()
     }
     
+    private func deleteShoppingItem(_ item: ShoppingListItem) {
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+            recipeStore.removeFromShoppingList(item)
+            recipeStore.selectedShoppingItems.remove(item.id)
+        }
+        
+        // Haptic feedback
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
+    }
+    
     private func copySelectedItems() {
         let selectedNames = recipeStore.shoppingList
-            .filter { selectedItems.contains($0.id) }
+            .filter { recipeStore.selectedShoppingItems.contains($0.id) }
             .map { $0.name }
             .joined(separator: "\n")
         
@@ -350,18 +367,18 @@ struct ShoppingListView: View {
         
         // Clear selection after copy
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-            selectedItems.removeAll()
+            recipeStore.selectedShoppingItems.removeAll()
         }
     }
     
     private func clearSelectedItems() {
-        let itemsToRemove = recipeStore.shoppingList.filter { selectedItems.contains($0.id) }
+        let itemsToRemove = recipeStore.shoppingList.filter { recipeStore.selectedShoppingItems.contains($0.id) }
         
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             for item in itemsToRemove {
                 recipeStore.removeFromShoppingList(item)
             }
-            selectedItems.removeAll()
+            recipeStore.selectedShoppingItems.removeAll()
         }
         
         // Success feedback
@@ -372,7 +389,7 @@ struct ShoppingListView: View {
     private func clearAllItems() {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             recipeStore.clearShoppingList()
-            selectedItems.removeAll()
+            recipeStore.selectedShoppingItems.removeAll()
         }
         
         // Success feedback
