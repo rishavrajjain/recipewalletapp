@@ -287,6 +287,100 @@ class AuthViewModel: NSObject, ObservableObject {
         return result
     }
 
+    // MARK: - Email Login for Apple Review Team
+    
+    /// Signs in with hardcoded email credentials for Apple review team
+    func signInWithEmail(email: String, password: String, completion: @escaping (Bool) -> Void) {
+        // Hardcoded credentials for Apple review
+        guard email == "test@recipewallet.ai" && password == "Test#123" else {
+            showError("Invalid credentials. Please use the provided test credentials.")
+            completion(false)
+            return
+        }
+        
+        guard !isAuthenticating else {
+            completion(false)
+            return
+        }
+        
+        isAuthenticating = true
+        clearError()
+        
+        // Try to sign in with Firebase Auth
+        Auth.auth().signIn(withEmail: email, password: password) { [weak self] result, error in
+            if let error = error {
+                // If user doesn't exist, create them
+                self?.createTestUser(email: email, password: password, completion: completion)
+            } else {
+                // Success - user already exists
+                DispatchQueue.main.async {
+                    self?.isAuthenticating = false
+                    completion(true)
+                }
+            }
+        }
+    }
+    
+    /// Creates the test user in Firebase Auth and Firestore with basic profile
+    private func createTestUser(email: String, password: String, completion: @escaping (Bool) -> Void) {
+        Auth.auth().createUser(withEmail: email, password: password) { [weak self] result, error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    self?.showError("Failed to create test user: \(error.localizedDescription)")
+                    self?.isAuthenticating = false
+                    completion(false)
+                    return
+                }
+                
+                guard let user = result?.user else {
+                    self?.showError("Failed to get user after creation")
+                    self?.isAuthenticating = false
+                    completion(false)
+                    return
+                }
+                
+                // Create basic user profile
+                self?.createBasicTestUserProfile(user: user, completion: completion)
+            }
+        }
+    }
+    
+    /// Creates basic test user profile in Firestore without dummy data
+    private func createBasicTestUserProfile(user: User, completion: @escaping (Bool) -> Void) {
+        let db = Firestore.firestore()
+        let userRef = db.collection("users").document(user.uid)
+        
+        // Create basic user profile - no dummy recipes or collections
+        let userData: [String: Any] = [
+            "uid": user.uid,
+            "name": "Apple Review User",
+            "email": "test@recipewallet.ai",
+            "provider": "email",
+            "createdAt": FieldValue.serverTimestamp(),
+            "lastSignIn": FieldValue.serverTimestamp(),
+            "isDeleted": false,
+            "shoppingList": [],
+            "ownedRecipeIds": [],
+            "ownedCollectionIds": []
+        ]
+        
+        // Create user document
+        userRef.setData(userData) { [weak self] error in
+            DispatchQueue.main.async {
+                if let error = error {
+                    print("Error creating user profile: \(error)")
+                    self?.showError("Failed to create user profile")
+                    self?.isAuthenticating = false
+                    completion(false)
+                } else {
+                    print("✅ Basic test user created successfully")
+                    self?.isAuthenticating = false
+                    completion(true)
+                }
+            }
+        }
+    }
+
     private func sha256(_ input: String) -> String {
         let inputData = Data(input.utf8)
         let hashedData = SHA256.hash(data: inputData)

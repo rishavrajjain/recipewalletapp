@@ -40,7 +40,7 @@ class RecipeCloudStore {
             Auth.auth().removeStateDidChangeListener(handle)
         }
     }
-    
+
     private func clearCache() {
         cachedUserRecipes = []
         cachedUserCollections = []
@@ -72,7 +72,7 @@ class RecipeCloudStore {
         group.enter()
         db.collection("users").document(uid).getDocument { [weak self] snapshot, _ in
             defer { group.leave() }
-            
+
             if let data = snapshot?.data() {
                 // Load shopping list
                 if let listData = data["shoppingList"],
@@ -167,7 +167,7 @@ class RecipeCloudStore {
            let json = try? JSONSerialization.jsonObject(with: encoded) {
             payload["shoppingList"] = json
         }
-        
+
         // Save ownership lists for better tracking
         let recipeIds = cachedUserRecipes.map { $0.id }
         let collectionIds = cachedUserCollections.map { $0.id }

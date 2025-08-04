@@ -6,9 +6,14 @@ service cloud.firestore {
     // HELPER FUNCTIONS
     // ========================================================================
     
-    // Check if user is authenticated
+    // Check if user is authenticated (includes anonymous demo users)
     function isAuthenticated() {
       return request.auth != null;
+    }
+    
+    // Check if user is demo account (anonymous authentication)
+    function isDemoAccount() {
+      return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous';
     }
     
     // Check if user owns the resource
@@ -49,6 +54,9 @@ service cloud.firestore {
       
       // Allow reading user profile info for sharing/social features
       allow get: if isAuthenticated() && resource.data.keys().hasAny(['profile', 'socialData']);
+      
+      // Allow demo accounts to create and access demo data
+      allow read, write: if isDemoAccount() && request.auth.uid == userId;
     }
 
     // ========================================================================
@@ -67,6 +75,9 @@ service cloud.firestore {
       
       // Only owners can delete their recipes
       allow delete: if isOwner(resource);
+      
+      // Demo accounts can freely access demo recipes
+      allow read, write: if isDemoAccount();
     }
 
     // ========================================================================
@@ -87,6 +98,9 @@ service cloud.firestore {
       
       // Only owners can delete collections
       allow delete: if isOwner(resource);
+      
+      // Demo accounts can freely access demo collections
+      allow read, write: if isDemoAccount();
     }
 
     // ========================================================================

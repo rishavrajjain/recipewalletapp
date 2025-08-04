@@ -537,7 +537,7 @@ class RecipeAPIService {
         request.timeoutInterval = 90
         
         do {
-            request.httpBody = try JSONEncoder().encode(["link": reelURL])
+        request.httpBody = try JSONEncoder().encode(["link": reelURL])
         } catch {
             throw APIError.serverError("Failed to create request: \(error.localizedDescription)")
         }
@@ -559,7 +559,7 @@ class RecipeAPIService {
                     throw APIError.serverError("Failed to extract a valid recipe from the provided link. The content may not be a recipe or the website is not supported.")
                 }
             } else {
-                throw APIError.serverError("Server connection failed. Please try again.")
+            throw APIError.serverError("Server connection failed. Please try again.")
             }
         }
         
@@ -567,9 +567,9 @@ class RecipeAPIService {
         // Backend already sends camelCase, no conversion needed
         
         do {
-            let apiResponse = try decoder.decode(APIResponse.self, from: data)
-            
-            guard apiResponse.success, let apiRecipe = apiResponse.recipe else {
+        let apiResponse = try decoder.decode(APIResponse.self, from: data)
+        
+        guard apiResponse.success, let apiRecipe = apiResponse.recipe else {
                 let errorMsg = apiResponse.error ?? "Could not extract a recipe from the link."
                 throw APIError.serverError(errorMsg)
             }
@@ -899,6 +899,20 @@ class RecipeStore: ObservableObject {
         return ""
     }
     
+    private func generateUniqueCollectionName(baseName: String) -> String {
+        let existingNames = Set(collections.map { $0.name.lowercased() })
+        var candidateName = baseName
+        var counter = 1
+        
+        // Keep checking until we find a unique name
+        while existingNames.contains(candidateName.lowercased()) {
+            counter += 1
+            candidateName = "\(baseName) (\(counter))"
+        }
+        
+        return candidateName
+    }
+    
     private func startCollectionImport(collectionId: String) {
         guard !collectionId.isEmpty else {
             handleImportError(NSError(domain: "ImportError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid collection link"]))
@@ -968,10 +982,11 @@ class RecipeStore: ObservableObject {
             }
         }
         
-        // Create a new collection with original name (no custom naming)
+        // Create a new collection with unique name to avoid duplicates
+        let uniqueName = generateUniqueCollectionName(baseName: collection.name)
         let newCollection = Collection(
             id: UUID().uuidString,
-            name: collection.name, // Use original name directly
+            name: uniqueName,
             description: collection.description,
             coverImageUrl: collection.coverImageUrl,
             recipeIDs: newRecipeIds,
@@ -991,7 +1006,12 @@ class RecipeStore: ObservableObject {
             self.newlyImportedCollections.remove(newCollection.id)
         }
         
-        print("📥 Imported collection '\(newCollection.name)' with \(newRecipes.count) new recipes and \(newRecipeIds.count - newRecipes.count) existing recipes")
+        let nameChanged = uniqueName != collection.name
+        if nameChanged {
+            print("📥 Imported collection '\(collection.name)' as '\(newCollection.name)' (renamed to avoid duplicate) with \(newRecipes.count) new recipes and \(newRecipeIds.count - newRecipes.count) existing recipes")
+        } else {
+            print("📥 Imported collection '\(newCollection.name)' with \(newRecipes.count) new recipes and \(newRecipeIds.count - newRecipes.count) existing recipes")
+        }
         
         // Update UI
         filterRecipes()
@@ -1067,7 +1087,7 @@ class RecipeStore: ObservableObject {
             print("📁 Found recipes data in UserDefaults (\(recipesData.count) bytes)")
             do {
                 let decodedRecipes = try decoder.decode([Recipe].self, from: recipesData)
-                self.recipes = decodedRecipes
+            self.recipes = decodedRecipes
                 print("✅ Loaded \(decodedRecipes.count) recipes from UserDefaults")
                 // Print first recipe name for debugging
                 if let firstRecipe = decodedRecipes.first {
@@ -1088,7 +1108,7 @@ class RecipeStore: ObservableObject {
             print("📁 Found collections data in UserDefaults (\(collectionsData.count) bytes)")
             do {
                 let decodedCollections = try decoder.decode([Collection].self, from: collectionsData)
-                self.collections = decodedCollections
+            self.collections = decodedCollections
                 print("✅ Loaded \(decodedCollections.count) collections from UserDefaults")
                 for collection in decodedCollections {
                     print("📂 Collection: '\(collection.name)' with \(collection.recipeIDs.count) recipes")
@@ -1405,8 +1425,8 @@ struct TabBarView: View {
                 switch selectedTab {
                 case 0:
                     NavigationStack {
-                        HomeView()
-                    }
+            HomeView()
+        }
                 case 1:
                     ImportTabView()
                 case 2:
@@ -1794,9 +1814,9 @@ struct PlatformCard: View {
                     .frame(width: 24, height: 24)
             } else {
                 Image(systemName: platformSystemIcon)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(.secondary)
-                    .frame(width: 24, height: 24)
+                .font(.system(size: 18, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 24, height: 24)
             }
             
             VStack(alignment: .leading, spacing: 2) {
@@ -2110,10 +2130,10 @@ struct CollectionDetailView: View {
                         Label("Share Collection", systemImage: "square.and.arrow.up")
                     }
                     
-                    Button {
-                        showingAddRecipesSheet = true
-                    } label: {
-                        Label("Add Recipes", systemImage: "folder.badge.plus")
+                Button {
+                    showingAddRecipesSheet = true
+                } label: {
+                    Label("Add Recipes", systemImage: "folder.badge.plus")
                     }
                 }
             }
@@ -2209,15 +2229,15 @@ struct RecipeDetailView: View {
                     Button(action: {
                         openOriginalSource()
                     }) {
-                        AsyncImage(url: URL(string: recipe.imageUrl)) { image in
+                AsyncImage(url: URL(string: recipe.imageUrl)) { image in
                             image
                                 .resizable()
                                 .aspectRatio(contentMode: .fill)
-                        } placeholder: {
-                            RecipeImagePlaceholder(isFromReel: recipe.isFromReel)
-                        }
-                        .frame(height: 250)
-                        .clipped()
+                } placeholder: {
+                    RecipeImagePlaceholder(isFromReel: recipe.isFromReel)
+                }
+                .frame(height: 250)
+                .clipped()
                     }
                     .buttonStyle(.plain)
                 }
@@ -2244,12 +2264,12 @@ struct RecipeDetailView: View {
                             
                             // Cook Time
                             if let cookTime = recipe.cookTime {
-                                RecipeInfoCard(
-                                    icon: "flame",
+                            RecipeInfoCard(
+                                icon: "flame",
                                     title: "Cook",
                                     value: "\(cookTime) min",
                                     color: .orange
-                                )
+                            )
                             }
                             
                             // Difficulty
@@ -2295,15 +2315,15 @@ struct RecipeDetailView: View {
                     
                     // Lazy load heavy components
                     Group {
-                        if let nutrition = recipe.nutrition {
-                            NutritionView(nutrition: nutrition)
-                        }
-                        
-                        HealthReport(recipe: recipe)
-                        
-                        IngredientsView(recipe: recipe)
-                        
-                        InstructionsView(recipe: recipe)
+                    if let nutrition = recipe.nutrition {
+                        NutritionView(nutrition: nutrition)
+                    }
+                    
+                    HealthReport(recipe: recipe)
+                    
+                    IngredientsView(recipe: recipe)
+                    
+                    InstructionsView(recipe: recipe)
                     }
                 }
                 .padding()
@@ -2312,9 +2332,9 @@ struct RecipeDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onReceive(recipeStore.$shouldDismissToHome) { shouldDismiss in
             if shouldDismiss {
-                dismiss()
-            }
-        }
+                        dismiss()
+                    }
+                }
     }
     
     private func openOriginalSource() {
@@ -2392,7 +2412,7 @@ struct NewCollectionSheet: View {
                     Button("Add") {
                         let success = store.createCollection(named: name)
                         if success {
-                            dismiss()
+                        dismiss()
                         } else {
                             showingDuplicateError = true
                             // Give haptic feedback
@@ -2473,8 +2493,8 @@ struct AddRecipesToCollectionSheet: View {
                                 Text(recipe.name).lineLimit(1)
                                 if let totalTime = recipe.totalTime {
                                     Text("\(totalTime) min")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                                 }
                             }
                             Spacer()
@@ -2877,11 +2897,11 @@ struct ImportReelSheet: View {
                 dismiss()
             } else {
                 // Regular recipe import - go to name input
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    currentStep = .nameInput
-                    isLinkFieldFocused = false
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { isNameFieldFocused = true }
+            withAnimation(.easeInOut(duration: 0.3)) {
+                currentStep = .nameInput
+                isLinkFieldFocused = false
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { isNameFieldFocused = true }
             }
             
         case .nameInput:
@@ -2920,8 +2940,8 @@ struct RecipeCard: View {
                 HStack(spacing: 4) {
                     if let totalTime = recipe.totalTime {
                         Label("\(totalTime) min", systemImage: "clock")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
                     }
                     
                     if let difficulty = recipe.difficulty {

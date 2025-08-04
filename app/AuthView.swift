@@ -10,6 +10,7 @@ struct AuthView: View {
     @State private var buttonsOpacity: Double = 0.0
     @State private var showingSafari = false
     @State private var safariURL: URL?
+    @State private var showingEmailLogin = false
     
     var body: some View {
         ZStack {
@@ -55,7 +56,7 @@ struct AuthView: View {
                     }
                     
                     VStack(spacing: 8) {
-                        Text("Recipe Wallet AI")
+                        Text("Recipe Wallet")
                             .font(.system(size: 36, weight: .bold, design: .rounded))
                             .foregroundColor(.black)
 
@@ -145,6 +146,15 @@ struct AuthView: View {
                 }
 
                 // Footer with Tappable Terms
+                // Discreet Email Login for Apple Review
+                Button(action: { showingEmailLogin = true }) {
+                    Text("Login with email")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.black.opacity(0.5))
+                        .underline()
+                }
+                .padding(.bottom, 16)
+                
                 VStack(spacing: 8) {
                     Text("By continuing, you agree to our")
                         .font(.system(size: 12, weight: .medium))
@@ -182,6 +192,9 @@ struct AuthView: View {
             if let url = safariURL {
                 SafariView(url: url)
             }
+        }
+        .sheet(isPresented: $showingEmailLogin) {
+            EmailLoginSheet(authViewModel: authViewModel, isPresented: $showingEmailLogin)
         }
         .alert("Authentication Error", isPresented: $authViewModel.showingError) {
             Button("OK") {
@@ -225,6 +238,133 @@ struct SafariView: UIViewControllerRepresentable {
     }
     
     func updateUIViewController(_ uiViewController: SFSafariViewController, context: Context) {}
+}
+
+// MARK: - Email Login Sheet for Apple Review
+struct EmailLoginSheet: View {
+    @ObservedObject var authViewModel: AuthViewModel
+    @Binding var isPresented: Bool
+    @State private var email = ""
+    @State private var password = ""
+    @State private var isLoading = false
+    
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                // Yellow background to match app theme
+                Color(red: 1.0, green: 0.85, blue: 0.1)
+                    .ignoresSafeArea()
+                
+                VStack(spacing: 24) {
+                    Spacer()
+                    
+                    // Header
+                    VStack(spacing: 12) {
+                        Text("Apple Review Login")
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundColor(.black)
+                        
+                        Text("Use the provided test credentials")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(.black.opacity(0.7))
+                    }
+                    
+                    // Test Credentials Display
+                    VStack(spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Test Email:")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.black.opacity(0.8))
+                            
+                            Text("test@recipewallet.ai")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color.white.opacity(0.9))
+                                .cornerRadius(12)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Test Password:")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.black.opacity(0.8))
+                            
+                            Text("Test#123")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 12)
+                                .background(Color.white.opacity(0.9))
+                                .cornerRadius(12)
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    // Input Fields
+                    VStack(spacing: 16) {
+                        TextField("Email", text: $email)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .keyboardType(.emailAddress)
+                            .autocapitalization(.none)
+                            .disableAutocorrection(true)
+                        
+                        SecureField("Password", text: $password)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                    }
+                    .padding(.horizontal, 20)
+                    
+                    // Login Button
+                    Button(action: handleLogin) {
+                        HStack {
+                            if isLoading {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    .scaleEffect(0.8)
+                            }
+                            
+                            Text(isLoading ? "Signing in..." : "Login")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(Color.black)
+                        .cornerRadius(12)
+                        .opacity(isLoading ? 0.7 : 1.0)
+                    }
+                    .disabled(isLoading || email.isEmpty || password.isEmpty)
+                    .padding(.horizontal, 20)
+                    
+                    Spacer()
+                }
+                .padding(.top, 20)
+            }
+            .navigationTitle("Test Login")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Cancel") {
+                        isPresented = false
+                    }
+                    .foregroundColor(.black)
+                }
+            }
+        }
+    }
+    
+    private func handleLogin() {
+        isLoading = true
+        
+        authViewModel.signInWithEmail(email: email, password: password) { success in
+            DispatchQueue.main.async {
+                isLoading = false
+                if success {
+                    isPresented = false
+                }
+            }
+        }
+    }
 }
 
 #Preview {

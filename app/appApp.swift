@@ -91,7 +91,7 @@ struct LoadingView: View {
                         .foregroundColor(.black.opacity(0.8))
                 }
                 
-                Text("Recipe Wallet AI")
+                Text("Recipe Wallet")
                     .font(.system(size: 28, weight: .bold, design: .rounded))
                     .foregroundColor(.black)
                 
