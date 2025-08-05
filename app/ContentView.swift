@@ -2220,6 +2220,12 @@ struct CollectionDetailView: View {
                     NavigationLink(destination: RecipeDetailView(recipe: recipe)) {
                         RecipeCard(recipe: recipe)
                             .contentShape(Rectangle())
+                            .onLongPressGesture(minimumDuration: 0.5) {
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                                withAnimation {
+                                    store.toggle(recipe, in: collection)
+                                }
+                            }
                     }
                     .buttonStyle(.plain)
                 }
