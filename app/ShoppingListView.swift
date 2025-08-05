@@ -175,36 +175,36 @@ struct ShoppingListView: View {
                                 }
                                 
                                 ForEach(categoryGroup.value) { item in
-                                HStack(spacing: 16) {
-                                    // Selection/Checkbox circle
-                                    Button(action: {
-                                        toggleSelection(for: item)
-                                    }) {
+                                Button(action: {
+                                    toggleSelection(for: item)
+                                }) {
+                                    HStack(spacing: 16) {
+                                        // Selection/Checkbox circle
                                         Image(systemName: recipeStore.selectedShoppingItems.contains(item.id) ? "checkmark.circle.fill" : "circle")
                                             .font(.system(size: 20, weight: .medium))
                                             .foregroundColor(recipeStore.selectedShoppingItems.contains(item.id) ? Color(red: 0.15, green: 0.4, blue: 0.2) : Color(red: 0.15, green: 0.4, blue: 0.2))
                                             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: recipeStore.selectedShoppingItems.contains(item.id))
-                                    }
-                                    .buttonStyle(.plain)
-                                    
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(item.name)
-                                            .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(recipeStore.selectedShoppingItems.contains(item.id) ? .gray : .primary)
-                                            .multilineTextAlignment(.leading)
+                                        
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(item.name)
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(recipeStore.selectedShoppingItems.contains(item.id) ? .gray : .primary)
+                                                .multilineTextAlignment(.leading)
 
-                                        if let fromRecipe = item.fromRecipe {
-                                            Text("From: \(fromRecipe)")
-                                                .font(.system(size: 13))
-                                                .foregroundColor(recipeStore.selectedShoppingItems.contains(item.id) ? .gray : .secondary)
+                                            if let fromRecipe = item.fromRecipe {
+                                                Text("From: \(fromRecipe)")
+                                                    .font(.system(size: 13))
+                                                    .foregroundColor(recipeStore.selectedShoppingItems.contains(item.id) ? .gray : .secondary)
+                                            }
                                         }
+                                        
+                                        Spacer()
                                     }
-                                    
-                                    Spacer()
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 14)
+                                    .background(Color(.systemBackground))
                                 }
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 14)
-                                .background(Color(.systemBackground))
+                                .buttonStyle(.plain)
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
                                         deleteShoppingItem(item)

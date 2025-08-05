@@ -6,6 +6,7 @@ import FirebaseAuth
 extension Color {
     // Primary brand colors matching the new app icon
     static let brandYellow = Color(red: 1.0, green: 0.8, blue: 0.0)       // Pure vibrant yellow from icon
+    static let brandDarkYellow = Color(red: 0.9, green: 0.6, blue: 0.0)   // Darker yellow for navigation
     static let brandWhite = Color(red: 0.98, green: 0.98, blue: 1.0)      // Elegant white from pepper
     static let brandGray = Color(red: 0.45, green: 0.45, blue: 0.5)       // Sophisticated gray
     static let brandDarkGray = Color(red: 0.25, green: 0.25, blue: 0.3)   // Deep contrast
@@ -1625,9 +1626,9 @@ struct TabBarButton: View {
     
     private var buttonColor: Color {
         if shouldAnimateAttention {
-            return Color(red: 1.0, green: 0.82, blue: 0.165) // #FFD12A
+            return .brandDarkYellow
         } else {
-            return isSelected ? Color(red: 1.0, green: 0.82, blue: 0.165) : Color(.systemGray) // #FFD12A for selected
+            return isSelected ? .brandDarkYellow : Color(.systemGray)
         }
     }
     
@@ -2156,6 +2157,8 @@ struct CollectionDetailView: View {
     @EnvironmentObject var store: RecipeStore
     @State private var showingAddRecipesSheet = false
     @State private var showingShareSheet = false
+    @State private var recipeToDelete: Recipe?
+    @State private var showingDeleteAlert = false
     
     private let columns = [GridItem(.flexible()), GridItem(.flexible())]
     
@@ -2193,6 +2196,18 @@ struct CollectionDetailView: View {
         .sheet(isPresented: $showingShareSheet) {
             ShareCollectionSheet(collection: collection)
         }
+        .alert("Remove Recipe", isPresented: $showingDeleteAlert) {
+            Button("Remove", role: .destructive) {
+                if let recipe = recipeToDelete {
+                    withAnimation {
+                        store.toggle(recipe, in: collection)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("Remove '\(recipeToDelete?.name ?? "")' from '\(collection.name)'?")
+        }
     }
     
     private var emptyState: some View {
@@ -2222,9 +2237,8 @@ struct CollectionDetailView: View {
                             .contentShape(Rectangle())
                             .onLongPressGesture(minimumDuration: 0.5) {
                                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                                withAnimation {
-                                    store.toggle(recipe, in: collection)
-                                }
+                                recipeToDelete = recipe
+                                showingDeleteAlert = true
                             }
                     }
                     .buttonStyle(.plain)
