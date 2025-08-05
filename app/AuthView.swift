@@ -251,96 +251,134 @@ struct EmailLoginSheet: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                // Yellow background to match app theme
-                Color(red: 1.0, green: 0.85, blue: 0.1)
-                    .ignoresSafeArea()
+                // Premium gradient background
+                LinearGradient(
+                    colors: [
+                        Color(red: 1.0, green: 0.85, blue: 0.1),
+                        Color(red: 1.0, green: 0.78, blue: 0.0)
+                    ],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
                 
-                VStack(spacing: 24) {
-                    Spacer()
-                    
-                    // Header
-                    VStack(spacing: 12) {
-                        Text("Apple Review Login")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(.black)
+                ScrollView {
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 60)
                         
-                        Text("Use the provided test credentials")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(.black.opacity(0.7))
-                    }
-                    
-                    // Test Credentials Display
-                    VStack(spacing: 16) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Test Email:")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.black.opacity(0.8))
-                            
-                            Text("test@recipewallet.ai")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(Color.white.opacity(0.9))
-                                .cornerRadius(12)
-                        }
-                        
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Test Password:")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.black.opacity(0.8))
-                            
-                            Text("Test#123")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 12)
-                                .background(Color.white.opacity(0.9))
-                                .cornerRadius(12)
-                        }
-                    }
-                    .padding(.horizontal, 20)
-                    
-                    // Input Fields
-                    VStack(spacing: 16) {
-                        TextField("Email", text: $email)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                            .keyboardType(.emailAddress)
-                            .autocapitalization(.none)
-                            .disableAutocorrection(true)
-                        
-                        SecureField("Password", text: $password)
-                            .textFieldStyle(RoundedBorderTextFieldStyle())
-                    }
-                    .padding(.horizontal, 20)
-                    
-                    // Login Button
-                    Button(action: handleLogin) {
-                        HStack {
-                            if isLoading {
-                                ProgressView()
-                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                                    .scaleEffect(0.8)
+                        // App Logo Section
+                        VStack(spacing: 20) {
+                            if let logoImage = UIImage(named: "appLogo") {
+                                Image(uiImage: logoImage)
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 80, height: 80)
+                                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                                    .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
+                            } else {
+                                // Fallback icon
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.black.opacity(0.1))
+                                        .frame(width: 80, height: 80)
+                                    
+                                    Image(systemName: "fork.knife.circle.fill")
+                                        .font(.system(size: 40, weight: .light))
+                                        .foregroundColor(.black.opacity(0.7))
+                                }
+                                .shadow(color: .black.opacity(0.15), radius: 6, x: 0, y: 3)
                             }
                             
-                            Text(isLoading ? "Signing in..." : "Login")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundColor(.white)
+                            // App Title
+                            Text("Recipe Wallet AI")
+                                .font(.system(size: 28, weight: .bold))
+                                .foregroundColor(.black)
+                            
+                            Text("Login to your account")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(.black.opacity(0.7))
                         }
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color.black)
-                        .cornerRadius(12)
-                        .opacity(isLoading ? 0.7 : 1.0)
+                        .padding(.bottom, 50)
+                        
+                        // Login Form
+                        VStack(spacing: 24) {
+                            // Email Field
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Email")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.black.opacity(0.8))
+                                
+                                TextField("Enter your email", text: $email)
+                                    .font(.system(size: 16))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                    .background(Color.white.opacity(0.95))
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                                    )
+                                    .keyboardType(.emailAddress)
+                                    .autocapitalization(.none)
+                                    .disableAutocorrection(true)
+                            }
+                            
+                            // Password Field
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("Password")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.black.opacity(0.8))
+                                
+                                SecureField("Enter your password", text: $password)
+                                    .font(.system(size: 16))
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 14)
+                                    .background(Color.white.opacity(0.95))
+                                    .cornerRadius(12)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 12)
+                                            .stroke(Color.black.opacity(0.1), lineWidth: 1)
+                                    )
+                            }
+                            
+                            // Login Button
+                            Button(action: handleLogin) {
+                                HStack(spacing: 8) {
+                                    if isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                            .scaleEffect(0.9)
+                                    }
+                                    
+                                    Text(isLoading ? "Signing In..." : "Login")
+                                        .font(.system(size: 17, weight: .semibold))
+                                        .foregroundColor(.white)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 52)
+                                .background(
+                                    LinearGradient(
+                                        colors: [Color.black, Color.black.opacity(0.8)],
+                                        startPoint: .top,
+                                        endPoint: .bottom
+                                    )
+                                )
+                                .cornerRadius(16)
+                                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+                                .scaleEffect(isLoading ? 0.98 : 1.0)
+                                .opacity(isLoading ? 0.8 : 1.0)
+                            }
+                            .disabled(isLoading || email.isEmpty || password.isEmpty)
+                            .animation(.easeInOut(duration: 0.2), value: isLoading)
+                            .padding(.top, 8)
+                        }
+                        .padding(.horizontal, 32)
+                        
+                        Spacer(minLength: 100)
                     }
-                    .disabled(isLoading || email.isEmpty || password.isEmpty)
-                    .padding(.horizontal, 20)
-                    
-                    Spacer()
                 }
-                .padding(.top, 20)
             }
-            .navigationTitle("Test Login")
+            .navigationTitle("Login")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
