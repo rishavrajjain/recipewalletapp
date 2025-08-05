@@ -190,13 +190,13 @@ struct ShoppingListView: View {
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(item.name)
                                             .font(.system(size: 16, weight: .medium))
-                                            .foregroundColor(.primary)
+                                            .foregroundColor(recipeStore.selectedShoppingItems.contains(item.id) ? .gray : .primary)
                                             .multilineTextAlignment(.leading)
-                                        
+
                                         if let fromRecipe = item.fromRecipe {
                                             Text("From: \(fromRecipe)")
                                                 .font(.system(size: 13))
-                                                .foregroundColor(.secondary)
+                                                .foregroundColor(recipeStore.selectedShoppingItems.contains(item.id) ? .gray : .secondary)
                                         }
                                     }
                                     
