@@ -1446,6 +1446,7 @@ struct TabBarView: View {
             VStack {
                 Spacer()
                 CustomTabBar(selectedTab: $selectedTab)
+                    .ignoresSafeArea(.container, edges: .bottom)
             }
         }
         .ignoresSafeArea(.keyboard)
@@ -1466,7 +1467,7 @@ struct CustomTabBar: View {
         HStack(spacing: 0) {
             // Home Tab
             TabBarButton(
-                icon: "house.fill",
+                icon: "house",
                 title: "Home",
                 isSelected: selectedTab == 0,
                 shouldAnimateAttention: false,
@@ -1476,25 +1477,25 @@ struct CustomTabBar: View {
                 }
             )
             
-            // Import Tab (Prominent)
+            // Import Tab
             TabBarButton(
                 icon: "sparkles",
                 title: "Import",
                 isSelected: selectedTab == 1,
-                isProminent: true,
-                shouldAnimateAttention: recipeStore.isFirstTimeUser,
+                isProminent: false, // Remove prominent styling
+                shouldAnimateAttention: false, // Commented out animation: recipeStore.isFirstTimeUser
                 action: { 
                     selectedTab = 1
                     // Stop animation when user visits import page for first time
-                    if recipeStore.isFirstTimeUser {
-                        recipeStore.markFirstImportCompleted()
-                    }
+                    // if recipeStore.isFirstTimeUser {
+                    //     recipeStore.markFirstImportCompleted()
+                    // }
                 }
             )
             
             // Shopping List Tab
             TabBarButton(
-                icon: "list.clipboard.fill",
+                icon: "list.clipboard",
                 title: "Shopping",
                 isSelected: selectedTab == 2,
                 shouldAnimateAttention: false,
@@ -1503,7 +1504,7 @@ struct CustomTabBar: View {
             
             // Profile Tab
             TabBarButton(
-                icon: "person.circle.fill",
+                icon: "person.circle",
                 title: "Profile",
                 isSelected: selectedTab == 3,
                 shouldAnimateAttention: false,
@@ -1511,14 +1512,17 @@ struct CustomTabBar: View {
             )
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            .ultraThinMaterial,
-            in: RoundedRectangle(cornerRadius: 20)
+        .padding(.top, 6)
+        .padding(.bottom, 2)
+        .background(Color(.systemBackground))
+        .overlay(
+            Rectangle()
+                .frame(height: 0.5)
+                .foregroundColor(Color(.separator))
+                .opacity(0.6),
+            alignment: .top
         )
-        .shadow(color: .black.opacity(0.1), radius: 6, x: 0, y: 3)
-        .padding(.horizontal, 24)
-        .padding(.bottom, 8)
+        .background(Color(.systemBackground).ignoresSafeArea(.container, edges: .bottom))
     }
 }
 
@@ -1544,11 +1548,11 @@ struct TabBarButton: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(spacing: 3) {
+            VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: isProminent ? 22 : 18, weight: .medium))
+                    .font(.system(size: 20, weight: .medium))
                     .foregroundColor(buttonColor)
-                    .frame(width: isProminent ? 38 : 28, height: isProminent ? 38 : 28)
+                    .frame(width: 24, height: 24)
                 
                 Text(title)
                     .font(.system(size: 10, weight: .medium))
@@ -1558,6 +1562,7 @@ struct TabBarButton: View {
         }
         .buttonStyle(.plain)
         .frame(maxWidth: .infinity)
+        .frame(height: 50)
         .scaleEffect(animationScale.isFinite ? animationScale : 1.0)
         .opacity(animationOpacity.isFinite ? animationOpacity : 1.0)
         .onAppear {
@@ -1576,9 +1581,9 @@ struct TabBarButton: View {
     
     private var buttonColor: Color {
         if shouldAnimateAttention {
-            return .black // Black attention-grabbing color
+            return Color(red: 1.0, green: 0.82, blue: 0.165) // #FFD12A
         } else {
-            return isSelected ? .brandDarkGray : .brandSilver
+            return isSelected ? Color(red: 1.0, green: 0.82, blue: 0.165) : Color(.systemGray) // #FFD12A for selected
         }
     }
     
