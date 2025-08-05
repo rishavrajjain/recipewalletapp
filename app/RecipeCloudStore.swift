@@ -219,6 +219,40 @@ class RecipeCloudStore {
         }
     }
 
+    /// Delete multiple recipes from Firestore by their document IDs
+    func deleteRecipes(ids: [String]) {
+        guard let _ = currentUID, !ids.isEmpty else { return }
+        let batch = db.batch()
+        ids.forEach { id in
+            let ref = db.collection("recipes").document(id)
+            batch.deleteDocument(ref)
+        }
+        batch.commit { error in
+            if let error = error {
+                print("❌ Failed to delete duplicate recipes: \(error)")
+            } else {
+                print("🗑️ Deleted \(ids.count) duplicate recipes")
+            }
+        }
+    }
+
+    /// Delete multiple collections from Firestore by their document IDs
+    func deleteCollections(ids: [String]) {
+        guard let _ = currentUID, !ids.isEmpty else { return }
+        let batch = db.batch()
+        ids.forEach { id in
+            let ref = db.collection("collections").document(id)
+            batch.deleteDocument(ref)
+        }
+        batch.commit { error in
+            if let error = error {
+                print("❌ Failed to delete duplicate collections: \(error)")
+            } else {
+                print("🗑️ Deleted \(ids.count) duplicate collections")
+            }
+        }
+    }
+
     // ========================================================================
     // MARK: - 👤 User Profile (The Important Stuff You Actually Use)
     // ========================================================================

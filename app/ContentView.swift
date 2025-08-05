@@ -680,12 +680,12 @@ class RecipeStore: ObservableObject {
             print("❌ No authenticated user during init")
         }
         
-        // Only load sample data if we have no data at all
-        if recipes.isEmpty && !hasLoadedFromFirestore {
-            print("📝 Loading sample data (no existing data)")
+        // Only load sample data if we have no data and no authenticated user
+        if recipes.isEmpty && Auth.auth().currentUser == nil {
+            print("📝 Loading sample data for signed-out user")
             loadSampleData()
         } else {
-            print("✅ Skipping sample data (have existing data or loaded from Firestore)")
+            print("✅ Skipping sample data (user authenticated or data exists)")
             // If we have existing recipes but no Meal Preps collection, create it
             ensureMealPrepsCollectionExists()
         }
@@ -1077,7 +1077,37 @@ class RecipeStore: ObservableObject {
             }.sorted { $0.createdAt > $1.createdAt }
         }
     }
-    
+
+    private func deduplicateRecipes(_ recipes: [Recipe]) -> (unique: [Recipe], duplicates: [Recipe]) {
+        var seen = Set<String>()
+        var unique: [Recipe] = []
+        var duplicates: [Recipe] = []
+        for recipe in recipes {
+            let key = recipe.name.lowercased()
+            if seen.insert(key).inserted {
+                unique.append(recipe)
+            } else {
+                duplicates.append(recipe)
+            }
+        }
+        return (unique, duplicates)
+    }
+
+    private func deduplicateCollections(_ collections: [Collection]) -> (unique: [Collection], duplicates: [Collection]) {
+        var seen = Set<String>()
+        var unique: [Collection] = []
+        var duplicates: [Collection] = []
+        for collection in collections {
+            let key = collection.name.lowercased()
+            if seen.insert(key).inserted {
+                unique.append(collection)
+            } else {
+                duplicates.append(collection)
+            }
+        }
+        return (unique, duplicates)
+    }
+
     private func loadData() {
         print("📂 loadData() started")
         let decoder = JSONDecoder()
@@ -1180,34 +1210,48 @@ class RecipeStore: ObservableObject {
                 if !recipes.isEmpty || !collections.isEmpty || !list.isEmpty {
                     self.hasLoadedFromFirestore = true
                     print("🔥 Setting hasLoadedFromFirestore = true")
-                    
-                    // Update with Firestore data
-                    if !recipes.isEmpty { 
-                        print("🔄 Replacing \(self.recipes.count) local recipes with \(recipes.count) Firestore recipes")
-                        self.recipes = recipes 
+
+                    // Deduplicate recipes
+                    let recipeResult = deduplicateRecipes(recipes)
+                    if !recipeResult.duplicates.isEmpty {
+                        RecipeCloudStore.shared.deleteRecipes(ids: recipeResult.duplicates.map { $0.id })
+                        print("🗑 Removed \(recipeResult.duplicates.count) duplicate recipes")
+                    }
+                    if !recipeResult.unique.isEmpty {
+                        print("🔄 Replacing \(self.recipes.count) local recipes with \(recipeResult.unique.count) Firestore recipes")
+                        self.recipes = recipeResult.unique
                         print("✅ Updated recipes from Firestore")
                     }
-                    if !collections.isEmpty { 
-                        print("🔄 Replacing \(self.collections.count) local collections with \(collections.count) Firestore collections")
-                        self.collections = collections 
+
+                    // Deduplicate collections
+                    let collectionResult = deduplicateCollections(collections)
+                    if !collectionResult.duplicates.isEmpty {
+                        RecipeCloudStore.shared.deleteCollections(ids: collectionResult.duplicates.map { $0.id })
+                        print("🗑 Removed \(collectionResult.duplicates.count) duplicate collections")
+                    }
+                    if !collectionResult.unique.isEmpty {
+                        print("🔄 Replacing \(self.collections.count) local collections with \(collectionResult.unique.count) Firestore collections")
+                        self.collections = collectionResult.unique
                         print("✅ Updated collections from Firestore")
                     }
-                    if !list.isEmpty { 
+
+                    if !list.isEmpty {
                         print("🔄 Replacing \(self.shoppingList.count) local shopping items with \(list.count) Firestore items")
-                        self.shoppingList = list 
+                        self.shoppingList = list
                         print("✅ Updated shopping list from Firestore")
                     }
-                    
-                    // Collections already loaded from Firestore, no need to ensure Meal Preps again
+
                     print("📊 Loaded collections from Firestore: \(self.collections.count) collections")
-                    
-                    // 🔥 CRITICAL FIX: Refresh filtered recipes for UI display
                     print("🔄 Refreshing filtered recipes for UI display...")
                     self.filterRecipes()
                     print("✅ UI refresh completed - filteredRecipes count: \(self.filteredRecipes.count)")
                 } else {
                     print("📭 No data found in Firestore - keeping local data")
-                    print("📊 Keeping local data: \(self.recipes.count) recipes, \(self.collections.count) collections")
+                    self.hasLoadedFromFirestore = true
+                    if self.recipes.isEmpty && self.collections.isEmpty && self.shoppingList.isEmpty {
+                        print("📝 Loading sample data after empty Firestore")
+                        self.loadSampleData()
+                    }
                 }
                 
                 print("🔥 loadFromFirestore() completed")
