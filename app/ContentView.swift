@@ -637,6 +637,7 @@ class RecipeStore: ObservableObject {
     private let collectionsKey = "userCollections"
     private let shoppingListKey = "userShoppingList"
     private let firstTimeUserKey = "isFirstTimeUser"
+    private let hasEverBeenAuthenticatedKey = "hasEverBeenAuthenticated"
     
     init() {
         print("🚀 RecipeStore.init() started")
@@ -648,8 +649,9 @@ class RecipeStore: ObservableObject {
         self.isFirstTimeUser = !UserDefaults.standard.bool(forKey: firstTimeUserKey)
         print("👤 First time user: \(isFirstTimeUser)")
         
-        // Clean up old data structure
+        // Clean up old data structure and remove duplicates
         cleanupOldCollections()
+        removeDuplicateRecipes()
         print("🧹 After cleanupOldCollections(): \(recipes.count) recipes, \(collections.count) collections")
         
         // Set up authentication listener to reload data when user signs in
@@ -660,6 +662,10 @@ class RecipeStore: ObservableObject {
                 if let user = user {
                     // User signed in - load their data from Firestore
                     print("🔐 User authenticated: \(user.uid) - Loading Firestore data...")
+                    
+                    // Mark that user has ever been authenticated
+                    UserDefaults.standard.set(true, forKey: self.hasEverBeenAuthenticatedKey)
+                    
                     print("📊 Before Firestore load: \(self.recipes.count) recipes, \(self.collections.count) collections")
                     await self.loadFromFirestore()
                     print("📊 After Firestore load: \(self.recipes.count) recipes, \(self.collections.count) collections")
@@ -682,12 +688,16 @@ class RecipeStore: ObservableObject {
         }
         
         // Only load sample data if we have no data and no authenticated user
-        if recipes.isEmpty && Auth.auth().currentUser == nil {
-            print("📝 Loading sample data for signed-out user")
+        let hasEverBeenAuthenticated = UserDefaults.standard.bool(forKey: hasEverBeenAuthenticatedKey)
+        if recipes.isEmpty && Auth.auth().currentUser == nil && !hasEverBeenAuthenticated {
+            print("📝 Loading sample data for signed-out user (never authenticated)")
             loadSampleData()
         } else {
-            print("✅ Skipping sample data (user authenticated or data exists)")
-            // If we have existing recipes but no Meal Preps collection, create it
+            print("✅ Skipping sample data (user authenticated, data exists, or was previously authenticated)")
+        }
+        
+        // Always ensure Meal Preps collection exists if we have recipes
+        if !recipes.isEmpty {
             ensureMealPrepsCollectionExists()
         }
         
@@ -709,6 +719,14 @@ class RecipeStore: ObservableObject {
         if let mealPrepsIndex = collections.firstIndex(where: { $0.name == "Meal Preps" }),
            collections[mealPrepsIndex].recipeIDs.isEmpty && !recipes.isEmpty {
             collections[mealPrepsIndex].recipeIDs = recipes.map { $0.id }
+        }
+    }
+    
+    private func removeDuplicateRecipes() {
+        let recipeResult = deduplicateRecipes(recipes)
+        if !recipeResult.duplicates.isEmpty {
+            print("🧹 Removing \(recipeResult.duplicates.count) duplicate recipes on startup")
+            recipes = recipeResult.unique
         }
     }
     
@@ -1083,7 +1101,11 @@ class RecipeStore: ObservableObject {
         var seen = Set<String>()
         var unique: [Recipe] = []
         var duplicates: [Recipe] = []
-        for recipe in recipes {
+        
+        // Sort recipes by creation date (newest first) to keep the most recent version
+        let sortedRecipes = recipes.sorted { $0.createdAt > $1.createdAt }
+        
+        for recipe in sortedRecipes {
             let key = recipe.name.lowercased()
             if seen.insert(key).inserted {
                 unique.append(recipe)
@@ -1212,16 +1234,19 @@ class RecipeStore: ObservableObject {
                     self.hasLoadedFromFirestore = true
                     print("🔥 Setting hasLoadedFromFirestore = true")
 
-                    // Deduplicate recipes
-                    let recipeResult = deduplicateRecipes(recipes)
+                    // Combine local and Firestore recipes for deduplication
+                    let allRecipes = self.recipes + recipes
+                    let recipeResult = deduplicateRecipes(allRecipes)
+                    
                     if !recipeResult.duplicates.isEmpty {
                         RecipeCloudStore.shared.deleteRecipes(ids: recipeResult.duplicates.map { $0.id })
                         print("🗑 Removed \(recipeResult.duplicates.count) duplicate recipes")
                     }
+                    
                     if !recipeResult.unique.isEmpty {
-                        print("🔄 Replacing \(self.recipes.count) local recipes with \(recipeResult.unique.count) Firestore recipes")
+                        print("🔄 Replacing \(self.recipes.count) local recipes with \(recipeResult.unique.count) deduplicated recipes")
                         self.recipes = recipeResult.unique
-                        print("✅ Updated recipes from Firestore")
+                        print("✅ Updated recipes from Firestore (deduplicated)")
                     }
 
                     // Deduplicate collections
