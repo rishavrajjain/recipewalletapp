@@ -17,7 +17,7 @@ struct APIConfig {
         case .local:
             return URL(string: "http://192.168.1.7:8000")!
         case .production:
-            return URL(string: "https://recipewallet.onrender.com")!
+            return URL(string: "https://okra.onrender.com")!
         }
     }
     
